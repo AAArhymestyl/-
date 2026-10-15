@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>神降计划·塔</title>
+<style>
+  /* ============== 主题变量 ============== */
+  :root {
+    --bg: #000000;
+    --fg: #ffffff;
+    --fg-dim: #aaaaaa;
+    --fg-mute: #6a6a6a;
+    --accent: #e81123;
+    --accent-bright: #ff4444;
+    --accent-deep: #8a0a14;
+    --line-soft: rgba(232, 17, 35, 0.25);
+    --glow: 0 0 14px rgba(232, 17, 35, 0.55), 0 0 28px rgba(232, 17, 35, 0.25);
+    --font-display: "STKaiti", "KaiTi", "华文新魏", "STSong", "SimSun", serif;
+    --font-ui: "PingFang SC", "Microsoft YaHei", "Source Han Sans CN", sans-serif;
+    --font-en: "Cinzel", "Trajan Pro", "Times New Roman", serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-ui);
+    overflow: hidden;
+  }
+
+  /* 背景图与遮罩 */
+  body {
+    background: url('assets/bg.png') no-repeat center center / cover;
+    background-color: #000;
+    position: relative;
+  }
+  body::before {
+    content: "";
+    position: fixed; inset: 0;
+    background: radial-gradient(circle at 50% 50%, transparent 0%, rgba(0,0,0,0.6) 40%, rgba(0,0,0,0.95) 100%);
+    pointer-events: none;
+    z-index: 0;
+  }
+  body::after {
+    content: "";
+    position: fixed; left: 50%; bottom: 0;
+    width: 2px; height: 40vh;
+    transform: translateX(-50%);
+    background: linear-gradient(180deg, transparent, rgba(232,17,35,0.55));
+    filter: blur(6px);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  #app {
+    position: relative;
+    z-index: 1;
+    width: 100%; height: 100%;
+    overflow-y: auto;
+  }
+
+  /* ============== 页面通用容器 ============== */
+  .page {
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 16px 64px;
+    gap: 18px;
+  }
+
+  /* ============== 十字芒星背景 ============== */
+  .starburst-bg {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 120vw;
+    height: auto;
+    opacity: 0.08; /* 降低透明度，若隐若现 */
+    pointer-events: none;
+    z-index: -1;
+    mix-blend-mode: screen;
+  }
+
+  /* ============== 徽章 Emblem ============== */
+  .emblem {
+    width: 200px;
+    height: auto;
+    position: relative;
+    background: transparent !important;
+    border: none !important;
+    filter: drop-shadow(0 0 15px rgba(232, 17, 35, 0.8)) drop-shadow(0 0 30px rgba(232, 17, 35, 0.4));
+    animation: emblemPulse 4s infinite alternate ease-in-out;
+  }
+  
+  @keyframes emblemPulse {
+    0% { filter: drop-shadow(0 0 8px rgba(232, 17, 35, 0.5)) drop-shadow(0 0 15px rgba(232, 17, 35, 0.2)); }
+    100% { filter: drop-shadow(0 0 20px rgba(232, 17, 35, 0.9)) drop-shadow(0 0 40px rgba(232, 17, 35, 0.6)); }
+  }
+
+  /* ============== 标题 ============== */
+  .title-block { text-align: center; line-height: 1; }
+  .title-main {
+    font-family: var(--font-display);
+    font-size: 64px;
+    letter-spacing: 8px;
+    color: #8a0a14; /* 深红底色 */
+    /* 斜向的机械内阴影和外发光 */
+    text-shadow: 
+      -1px -1px 1px rgba(255, 255, 255, 0.2), /* 左上高光 */
+      2px 2px 3px rgba(0, 0, 0, 0.9),         /* 右下深阴影 */
+      0 0 15px rgba(232, 17, 35, 0.6);       /* 微弱的底光 */
+    font-weight: 700;
+    position: relative;
+    border-bottom: 2px solid rgba(232, 17, 35, 0.3); /* 底座感 */
+    padding-bottom: 5px;
+  }
+  .title-sub {
+    margin-top: 6px;
+    font-family: var(--font-en);
+    font-size: 12px;
+    letter-spacing: 6px;
+    color: var(--fg-dim);
+    text-transform: uppercase;
+  }
+
+  /* ============== 八角形面板 ============== */
+  .panel {
+    width: min(380px, 85vw);
+    background: rgba(8, 0, 0, 0.75);
+    backdrop-filter: blur(6px);
+    padding: 28px 26px 22px;
+    position: relative;
+    clip-path: polygon(18px 0, calc(100% - 18px) 0, 100% 18px, 100% calc(100% - 18px), calc(100% - 18px) 100%, 18px 100%, 0 calc(100% - 18px), 0 18px);
+    background-image: 
+        linear-gradient(rgba(232, 17, 35, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(232, 17, 35, 0.03) 1px, transparent 1px);
+    background-size: 20px 20px, 20px 20px;
+  }
+  .panel::before {
+    content: "";
+    position: absolute; inset: 1.5px;
+    clip-path: inherit;
+    background: linear-gradient(180deg, rgba(232,17,35,0.85), rgba(232,17,35,0.35) 12%, rgba(232,17,35,0.35) 88%, rgba(232,17,35,0.85));
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+            mask-composite: exclude;
+    padding: 1.5px;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .panel::after {
+    content: "";
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(circle at 8px 8px, var(--accent-bright) 0 2px, transparent 3px),
+      radial-gradient(circle at calc(100% - 8px) 8px, var(--accent-bright) 0 2px, transparent 3px),
+      radial-gradient(circle at 8px calc(100% - 8px), var(--accent-bright) 0 2px, transparent 3px),
+      radial-gradient(circle at calc(100% - 8px) calc(100% - 8px), var(--accent-bright) 0 2px, transparent 3px);
+    pointer-events: none;
+    z-index: 3;
+  }
+  .panel-inner {
+    position: relative; z-index: 4;
+    display: flex; flex-direction: column;
+    gap: 16px;
+  }
+
+  /* ============== 分段切换 Segmented Control ============== */
+  .segmented {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    margin-bottom: 4px;
+    padding: 4px 0;
+  }
+  .seg-slider {
+    position: absolute;
+    top: 0; left: 0;
+    height: 100%;
+    background: linear-gradient(135deg, var(--accent-deep), var(--accent));
+    clip-path: polygon(8px 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 8px 100%, 0 50%);
+    box-shadow: var(--glow);
+    transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.3s ease;
+    z-index: 1;
+  }
+  .seg-btn {
+    position: relative;
+    z-index: 2;
+    background: transparent;
+    border: none;
+    color: var(--fg-dim);
+    font-family: var(--font-ui);
+    font-size: 14px;
+    letter-spacing: 1.5px;
+    cursor: pointer;
+    padding: 8px 14px;
+    transition: color 0.3s ease;
+  }
+  .seg-btn:hover { color: var(--fg); }
+  .seg-btn.active { color: var(--fg); font-weight: 600; }
+
+  /* ============== 表单 ============== */
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field-label { font-size: 12px; color: var(--fg-dim); letter-spacing: 2px; }
+  .field-input-wrap {
+    position: relative;
+    display: flex; align-items: center;
+    background: rgba(0,0,0,0.55);
+    border: 1px solid var(--line-soft);
+    transition: border-color .2s, box-shadow .2s;
+  }
+  .field-input-wrap:focus-within {
+    border-color: var(--accent);
+    box-shadow: inset 0 0 8px rgba(232,17,35,0.35);
+  }
+  .field-icon {
+    width: 38px; height: 38px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--fg-dim);
+    flex-shrink: 0;
+    transition: color 0.2s;
+  }
+  .field-input-wrap:focus-within .field-icon { color: var(--accent); }
+  .field-icon svg { width: 16px; height: 16px; }
+  .field-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--fg);
+    font-family: var(--font-ui);
+    font-size: 14px;
+    padding: 10px 12px 10px 0;
+  }
+  .field-input::placeholder { color: var(--fg-mute); }
+  .field-input:-webkit-autofill {
+    -webkit-text-fill-color: var(--fg);
+    -webkit-box-shadow: 0 0 0 1000px rgba(0,0,0,0.55) inset;
+  }
+  .field-error { color: var(--accent-bright); font-size: 11px; min-height: 14px; line-height: 14px; }
+
+  /* ============== 表单辅助行 ============== */
+  .form-aux { display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
+  .checkbox { display: flex; align-items: center; gap: 6px; color: var(--fg-dim); cursor: pointer; user-select: none; }
+  .checkbox input { display: none; }
+  .checkbox .box {
+    width: 14px; height: 14px;
+    border: 1px solid var(--accent);
+    background: rgba(0,0,0,0.6);
+    display: flex; align-items: center; justify-content: center;
+    transition: background .15s;
+  }
+  .checkbox input:checked + .box { background: var(--accent); }
+  .checkbox .box svg { width: 10px; height: 10px; color: #fff; opacity: 0; transition: opacity .15s; }
+  .checkbox input:checked + .box svg { opacity: 1; }
+
+  .link {
+    color: var(--fg-dim); text-decoration: none; font-size: 12px;
+    cursor: pointer; border-bottom: 1px dotted var(--accent-deep); transition: color .15s;
+  }
+  .link:hover { color: var(--accent-bright); }
+
+  /* ============== 主按钮 ============== */
+  .btn-primary {
+    width: 100%; padding: 12px 0;
+    background: linear-gradient(180deg, #b30000 0%, #4a0000 50%, #110000 100%);
+    color: #ffffff;
+    border: 1px solid rgba(255, 100, 100, 0.5);
+    font-family: var(--font-ui); font-size: 16px; letter-spacing: 4px; font-weight: 600;
+    cursor: pointer;
+    clip-path: polygon(10px 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 10px 100%, 0 50%);
+    box-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.4), inset 0 -4px 8px rgba(0, 0, 0, 0.8), 0 0 15px rgba(232, 17, 35, 0.7);
+    transition: all 0.2s ease;
+    text-shadow: 0 0 8px rgba(255, 255, 255, 0.8);
+  }
+  .btn-primary:hover {
+    filter: brightness(1.2);
+    box-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.6), inset 0 -4px 8px rgba(0, 0, 0, 0.8), 0 0 25px rgba(232, 17, 35, 1);
+  }
+  .btn-primary:active { transform: scale(0.98); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ============== 底部链接与版本 ============== */
+  .panel-footer { text-align: center; font-size: 12px; color: var(--fg-dim); }
+  .version {
+    position: fixed; left: 0; right: 0; bottom: 12px;
+    text-align: center; font-size: 11px; color: #5a5a5a; letter-spacing: 2px; z-index: 5;
+  }
+
+  /* ============== 找回密码流程 ============== */
+  .stepper { display: flex; justify-content: center; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .step-dot { display: flex; align-items: center; gap: 6px; color: var(--fg-mute); font-size: 11px; letter-spacing: 1px; }
+  .step-dot .num {
+    width: 18px; height: 18px; border: 1px solid var(--line-soft);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-en); font-size: 10px;
+    clip-path: polygon(4px 0, calc(100% - 4px) 0, 100% 50%, calc(100% - 4px) 100%, 4px 100%, 0 50%);
+  }
+  .step-dot.active { color: var(--fg); }
+  .step-dot.active .num { border-color: var(--accent); background: var(--accent-deep); color: #fff; box-shadow: 0 0 6px rgba(232,17,35,0.6); }
+  .step-line { width: 24px; height: 1px; background: var(--line-soft); }
+
+  /* ============== 提示横幅 ============== */
+  .banner { width: 100%; padding: 8px 12px; background: rgba(232,17,35,0.08); border-left: 2px solid var(--accent); font-size: 12px; color: var(--fg-dim); }
+  .banner.success { background: rgba(76,175,80,0.06); border-color: #4caf50; }
+
+  /* ============== 主界面占位 ============== */
+  .app-placeholder {
+    min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; color: var(--fg-dim);
+  }
+  .app-placeholder h2 { font-family: var(--font-display); font-size: 28px; color: var(--accent); letter-spacing: 6px; text-shadow: 0 0 10px rgba(232,17,35,0.6); }
+  .session-info { font-size: 13px; color: var(--fg-dim); border: 1px solid var(--line-soft); padding: 12px 20px; background: rgba(0,0,0,0.4); }
+
+  /* 滚动条 */
+  #app::-webkit-scrollbar { width: 8px; }
+  #app::-webkit-scrollbar-track { background: #000; }
+  #app::-webkit-scrollbar-thumb { background: var(--accent-deep); }
+
+  @media (max-width: 420px) {
+    .title-main { font-size: 48px; letter-spacing: 4px; }
+    .panel { padding: 22px 18px 18px; }
+  }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+  <!-- 保持干净的空壳，完全交由 JS 动态生成 -->
+  <div id="app"></div>
+  <div class="version">— v.1.0.0 · 神降计划·塔 隐秘组织管理系统 —</div>
+
+<script>
+(function () {
+  "use strict";
+
+  const app = document.getElementById("app");
+
+  /* =========================================================
+   *  1. 路由与状态
+   * ========================================================= */
+  const routes = { "/login": renderLogin, "/register": renderRegister, "/forgot-password": renderForgotPassword, "/app": renderApp };
+  function getPath() { return location.hash.replace(/^#/, "") || "/login"; }
+  function navigate(path) { location.hash !== "#" + path ? location.hash = path : render(); }
+  function render() {
+    const fn = routes[getPath()] || renderLogin;
+    app.innerHTML = "";
+    fn(app);
+    app.scrollTop = 0;
+  }
+  window.addEventListener("hashchange", render);
+
+  const SESSION_KEY = "sdj_session";
+  const getSession = () => { try { return JSON.parse(localStorage.getItem(SESSION_KEY)) || null; } catch (e) { return null; } };
+  const setSession = (s) => localStorage.setItem(SESSION_KEY, JSON.stringify(s));
+  const clearSession = () => localStorage.removeItem(SESSION_KEY);
+
+  /* =========================================================
+   *  2. 通用 UI 工具
+   * ========================================================= */
+  const SVG_TAGS = new Set(["svg","path","circle","line","ellipse","rect","polygon","polyline","g","text","tspan","defs","use","symbol","marker","clipPath","mask","pattern","linearGradient","radialGradient","stop","image","foreignObject"]);
+  const SVG_NS = "http://www.w3.org/2000/svg";
+
+  function el(tag, attrs, ...children) {
+    const isSvg = SVG_TAGS.has(tag);
+    const node = isSvg ? document.createElementNS(SVG_NS, tag) : document.createElement(tag);
+    if (attrs) {
+      for (const k in attrs) {
+        if (k === "class") isSvg ? node.setAttribute("class", attrs[k]) : node.className = attrs[k];
+        else if (k === "style") node.setAttribute("style", attrs[k]);
+        else if (k.startsWith("on") && typeof attrs[k] === "function") node.addEventListener(k.slice(2).toLowerCase(), attrs[k]);
+        else if (attrs[k] != null) node.setAttribute(k, attrs[k]);
+      }
+    }
+    for (const c of children) {
+      if (c == null) continue;
+      if (typeof c === "string" || typeof c === "number") node.appendChild(document.createTextNode(String(c)));
+      else if (Array.isArray(c)) c.forEach(x => x && node.appendChild(x));
+      else node.appendChild(c);
+    }
+    return node;
+  }
+
+  // 图标库
+  function iconPerson() { return el("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "1.6", "stroke-linecap": "round", "stroke-linejoin": "round" }, el("circle", { cx: "12", cy: "8", r: "4" }), el("path", { d: "M4 20c0-4 4-6 8-6s8 2 8 6" })); }
+  function iconLock() { return el("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "1.6", "stroke-linecap": "round", "stroke-linejoin": "round" }, el("rect", { x: "5", y: "11", width: "14", height: "9", rx: "1.5" }), el("path", { d: "M8 11V7a4 4 0 0 1 8 0v4" })); }
+  function iconMail() { return el("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "1.6", "stroke-linecap": "round", "stroke-linejoin": "round" }, el("rect", { x: "3", y: "5", width: "18", height: "14", rx: "1.5" }), el("path", { d: "M3 7l9 6 9-6" })); }
+  function iconCheck() { return el("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "3", "stroke-linecap": "round", "stroke-linejoin": "round" }, el("path", { d: "M4 12l5 5L20 6" })); }
+  function iconKey() { return el("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "1.6", "stroke-linecap": "round", "stroke-linejoin": "round" }, el("circle", { cx: "7", cy: "14", r: "4" }), el("path", { d: "M10 12l10-7M16 8l3 3M14 10l2 2" })); }
+
+  // 核心组件
+  function emblem() { return el("img", { class: "emblem", src: "assets/tower.png", alt: "神降之塔" }); }
+  function titleBlock() { 
+    return el("div", { class: "title-block" }, 
+      el("div", { class: "title-main", "data-text": "神降计划·塔" }, "神降计划·塔"), 
+      el("div", { class: "title-sub" }, "DIVINE SURRENDER PLAN")
+     ); 
+   }
+  function pageWrap(children) { return el("div", { class: "page" }, el("img", { class: "starburst-bg", src: "assets/star.png", alt: "starburst" }), emblem(), titleBlock(), ...children); }
+
+  function segBtn(label, role, onClick) { return el("button", { class: "seg-btn", "data-role": role, onclick: onClick }, label); }
+  
+  function fieldWrap(labelText, iconSvgNode, opts) {
+    const input = el("input", { class: "field-input", type: opts.type || "text", placeholder: opts.placeholder || "", value: opts.value || "", autocomplete: "off" });
+    input.addEventListener("input", () => opts.onInput && opts.onInput(input.value));
+    return el("div", { class: "field" },
+      el("label", { class: "field-label" }, labelText),
+      el("div", { class: "field-input-wrap" }, el("div", { class: "field-icon" }, iconSvgNode), input),
+      el("div", { class: "field-error" }, opts.errorText || "")
+    );
+  }
+
+  function checkboxEl(label, onChange) {
+    const cb = el("input", { type: "checkbox" });
+    cb.addEventListener("change", () => onChange(cb.checked));
+    const box = el("span", { class: "box" }, iconCheck());
+    cb.style.display = "none";
+    const labelEl = el("label", { class: "checkbox" }, cb, box, el("span", {}, label));
+    labelEl.addEventListener("click", e => {
+      if (e.target === cb) return;
+      e.preventDefault(); cb.checked = !cb.checked; onChange(cb.checked);
+      box.style.background = cb.checked ? "var(--accent)" : "rgba(0,0,0,0.6)";
+    });
+    return labelEl;
+  }
+
+  /* =========================================================
+   *  3. 登录页 /login
+   * ========================================================= */
+  function renderLogin(root) {
+    let role = "player", name = "", pwd = "", auto = false;
+
+    const page = el("div", { class: "panel" },
+      el("div", { class: "panel-inner" },
+        el("div", { class: "segmented" },
+          el("div", { class: "seg-slider" }),
+          segBtn("玩家 / 契约者", "player", () => switchRole("player")),
+          segBtn("管理者", "admin", () => switchRole("admin"))
+        ),
+        el("div", { class: "banner", hidden: true }),
+        fieldWrap("姓名", iconPerson(), { placeholder: "请输入姓名", value: name, onInput: v => { name = v; } }),
+        fieldWrap("密码", iconLock(), { type: "password", placeholder: "请输入密码", value: pwd, onInput: v => { pwd = v; } }),
+        el("div", { class: "form-aux" },
+          checkboxEl("自动登录", checked => { auto = checked; }),
+          el("a", { class: "link", href: "#/forgot-password", textContent: "忘记密码？" })
+        ),
+        el("button", { class: "btn-primary", onclick: submit }, "载入"),
+        el("div", { class: "panel-footer" },
+          "是否注册", el("a", { class: "link", href: "#/register", style: "margin: 0 4px;", id: "reg-link" }, role === "player" ? "玩家/契约者" : "管理者"), "?"
+        )
+      )
+    );
+
+    function refreshRoleUI() {
+      const segs = page.querySelectorAll(".seg-btn");
+      const slider = page.querySelector(".seg-slider");
+      segs.forEach(s => s.classList.toggle("active", s.dataset.role === role));
+      
+      const activeSeg = Array.from(segs).find(s => s.dataset.role === role);
+      if (activeSeg && slider) {
+        // 修复：确保基于父容器准确计算宽度和位置
+        slider.style.width = `${activeSeg.offsetWidth}px`;
+        slider.style.transform = `translateX(${activeSeg.offsetLeft}px)`;
+      }
+      
+      const regLink = page.querySelector("#reg-link");
+      if (regLink) regLink.textContent = role === "player" ? "玩家/契约者" : "管理者";
+      const nameLabel = page.querySelectorAll(".field-label")[0];
+      if (nameLabel) nameLabel.textContent = role === "player" ? "姓名" : "管理员 ID";
+      const inputs = page.querySelectorAll(".field-input");
+      if (inputs[0]) inputs[0].placeholder = role === "player" ? "请输入姓名" : "请输入管理员 ID";
+    }
+
+    function switchRole(r) { role = r; refreshRoleUI(); }
+
+    function submit() {
+      const banner = page.querySelector(".banner");
+      if (!name.trim() || !pwd.trim()) {
+        banner.hidden = false; banner.className = "banner"; banner.textContent = "姓名与密码不能为空。"; return;
+      }
+      banner.hidden = true;
+      setSession({ role, name: name.trim(), ts: Date.now(), auto });
+      navigate("/app");
+    }
+
+    // 先挂载 DOM，再计算滑块宽度（解决初始化报错）
+    root.appendChild(pageWrap([page]));
+    requestAnimationFrame(() => { refreshRoleUI(); });
+  }
+
+  /* =========================================================
+   *  4. 注册页 /register
+   * ========================================================= */
+  function renderRegister(root) {
+    const form = { username: "", displayName: "", password: "", confirm: "" };
+    const errors = { username: "", displayName: "", password: "", confirm: "" };
+
+    const page = el("div", { class: "panel" },
+      el("div", { class: "panel-inner" },
+        el("div", { class: "field" }, el("label", { class: "field-label" }, "用户名"), inputWithIcon("username", iconPerson(), "3-16 位字母数字下划线", val => { form.username = val; errors.username = validateUsername(val); refreshErrors(); }), errBox("username")),
+        el("div", { class: "field" }, el("label", { class: "field-label" }, "显示名"), inputWithIcon("displayName", iconPerson(), "1-20 位字符", val => { form.displayName = val; errors.displayName = val.length < 1 ? "显示名不能为空" : val.length > 20 ? "不超过 20 字符" : ""; refreshErrors(); }), errBox("displayName")),
+        el("div", { class: "field" }, el("label", { class: "field-label" }, "密码"), inputWithIcon("password", iconLock(), "至少 8 位，含字母与数字", val => { form.password = val; errors.password = validatePassword(val); if (form.confirm) errors.confirm = val !== form.confirm ? "两次密码不一致" : ""; refreshErrors(); }, "password"), errBox("password")),
+        el("div", { class: "field" }, el("label", { class: "field-label" }, "确认密码"), inputWithIcon("confirm", iconLock(), "再次输入密码", val => { form.confirm = val; errors.confirm = val !== form.password ? "两次密码不一致" : ""; refreshErrors(); }, "password"), errBox("confirm")),
+        el("div", { class: "banner", hidden: true }),
+        el("button", { class: "btn-primary", onclick: submitRegister }, "完成注册"),
+        el("div", { class: "panel-footer" }, "已有身份？", el("a", { class: "link", href: "#/login", style: "margin-left:4px;" }, "返回登录"))
+      )
+    );
+
+    function refreshErrors() {
+      page.querySelectorAll(".field").forEach((f, i) => {
+        const errEl = f.querySelector(".field-error"); if (!errEl) return;
+        const keys = ["username", "displayName", "password", "confirm"];
+        errEl.textContent = errors[keys[i]] || "";
+      });
+    }
+
+    function submitRegister() {
+      const banner = page.querySelector(".banner");
+      errors.username = validateUsername(form.username);
+      errors.displayName = !form.displayName ? "显示名不能为空" : form.displayName.length > 20 ? "不超过 20 字符" : "";
+      errors.password = validatePassword(form.password);
+      errors.confirm = form.password !== form.confirm ? "两次密码不一致" : "";
+      refreshErrors();
+      if (Object.values(errors).some(e => e)) { banner.hidden = false; banner.className = "banner"; banner.textContent = "请修正表单错误后再提交。"; return; }
+      setSession({ role: "player", name: form.displayName, username: form.username, ts: Date.now(), auto: false });
+      navigate("/app");
+    }
+
+    function inputWithIcon(key, iconNode, placeholder, onInput, type) {
+      const input = el("input", { class: "field-input", type: type || "text", placeholder, autocomplete: "off" });
+      input.addEventListener("input", () => onInput(input.value));
+      return el("div", { class: "field-input-wrap" }, el("div", { class: "field-icon" }, iconNode), input);
+    }
+    function errBox(key) { return el("div", { class: "field-error", "data-key": key }); }
+
+    root.appendChild(pageWrap([page]));
+  }
+
+  function validateUsername(v) { if (!v) return "用户名不能为空"; if (v.length < 3 || v.length > 16) return "长度 3-16"; if (!/^[A-Za-z0-9_]+$/.test(v)) return "仅允许字母数字下划线"; return ""; }
+  function validatePassword(v) { if (!v) return "密码不能为空"; if (v.length < 8) return "至少 8 位"; if (!/[A-Za-z]/.test(v) || !/[0-9]/.test(v)) return "须含字母与数字"; return ""; }
+
+  /* =========================================================
+   *  5. 找回密码 /forgot-password
+   * ========================================================= */
+  function renderForgotPassword(root) {
+    let step = 1, email = "", code = "", newPwd = "", confirmPwd = "";
+    const page = el("div", { class: "panel" },
+      el("div", { class: "panel-inner" },
+        stepperEl(), el("div", { class: "banner", hidden: true }), el("div", { id: "step-body" }),
+        el("button", { class: "btn-primary", id: "step-btn", onclick: nextStep }, "发送重置链接"),
+        el("div", { class: "panel-footer" }, el("a", { class: "link", href: "#/login" }, "返回登录"))
+      )
+    );
+
+    function stepperEl() {
+      const dots = [["1", "请求重置"], ["2", "验证身份"], ["3", "设置新密码"]];
+      const parts = [];
+      dots.forEach(([n, t], i) => {
+        if (i > 0) parts.push(el("div", { class: "step-line" }));
+        parts.push(el("div", { class: "step-dot" + (i + 1 === step ? " active" : "") }, el("span", { class: "num" }, n), el("span", {}, t)));
+      });
+      return el("div", { class: "stepper" }, ...parts);
+    }
+
+    function renderStep() {
+      const body = page.querySelector("#step-body"), btn = page.querySelector("#step-btn");
+      body.innerHTML = "";
+      const oldStepper = page.querySelector(".stepper"); oldStepper.replaceWith(stepperEl());
+      page.querySelector(".banner").hidden = true;
+
+      if (step === 1) { body.appendChild(el("div", { class: "field" }, el("label", { class: "field-label" }, "邮箱"), el("div", { class: "field-input-wrap" }, el("div", { class: "field-icon" }, iconMail()), bindInput("email", "请输入注册邮箱", val => { email = val; })), el("div", { class: "field-error" }, ""))); btn.textContent = "发送重置链接"; }
+      else if (step === 2) { body.appendChild(el("div", { class: "field" }, el("label", { class: "field-label" }, "验证码"), el("div", { class: "field-input-wrap" }, el("div", { class: "field-icon" }, iconKey()), bindInput("code", "请输入邮件中的 6 位验证码", val => { code = val; })), el("div", { class: "field-error" }, ""))); btn.textContent = "验证身份"; }
+      else { body.appendChild(el("div", { class: "field" }, el("label", { class: "field-label" }, "新密码"), el("div", { class: "field-input-wrap" }, el("div", { class: "field-icon" }, iconLock()), bindInput("newPwd", "至少 8 位，含字母与数字", val => { newPwd = val; }, "password")), el("div", { class: "field-error" }, "")));
+             body.appendChild(el("div", { class: "field" }, el("label", { class: "field-label" }, "确认新密码"), el("div", { class: "field-input-wrap" }, el("div", { class: "field-icon" }, iconLock()), bindInput("confirmPwd", "再次输入新密码", val => { confirmPwd = val; }, "password")), el("div", { class: "field-error" }, ""))); btn.textContent = "完成重置"; }
+    }
+
+    function bindInput(name, placeholder, onInput, type) { const input = el("input", { class: "field-input", type: type || "text", placeholder, autocomplete: "off" }); input.addEventListener("input", () => onInput(input.value)); return input; }
+    function showBanner(msg, ok) { const banner = page.querySelector(".banner"); banner.hidden = false; banner.className = "banner" + (ok ? " success" : ""); banner.textContent = msg; }
+
+    function nextStep() {
+      if (step === 1) {
+        if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { showBanner("请输入合法邮箱地址。", false); return; }
+        showBanner("重置链接已发送至 " + email + "（演示：验证码 123456）", true); step = 2; renderStep();
+      } else if (step === 2) {
+        if (code.trim() !== "123456") { showBanner("验证码错误，演示中请输入 123456。", false); return; }
+        showBanner("身份验证通过，请设置新密码。", true); step = 3; renderStep();
+      } else {
+        const e1 = validatePassword(newPwd), e2 = newPwd !== confirmPwd ? "两次密码不一致" : "";
+        if (e1 || e2) { showBanner(e1 || e2, false); return; }
+        showBanner("密码已重置，正在返回登录页…", true); setTimeout(() => navigate("/login"), 1200);
+      }
+    }
+
+    renderStep();
+    root.appendChild(pageWrap([page]));
+  }
+
+  /* =========================================================
+   *  6. 主界面占位 /app
+   * ========================================================= */
+  function renderApp(root) {
+    const s = getSession();
+    if (!s) { navigate("/login"); return; }
+    root.appendChild(el("div", { class: "app-placeholder" },
+      emblem(),
+      el("h2", {}, "欢迎，" + s.name),
+      el("div", { class: "session-info" }, "身份：" + (s.role === "player" ? "玩家 / 契约者" : "管理者") + " · 登录时间：" + new Date(s.ts).toLocaleString("zh-CN")),
+      el("p", { style: "color: var(--fg-mute); font-size:13px; max-width:420px; text-align:center;" }, "主界面待后续规划。此页面仅为登录会话验证占位。"),
+      el("button", { class: "btn-primary", style: "width: 200px; margin-top: 18px;", onclick: () => { clearSession(); navigate("/login"); } }, "退出会话")
+    ));
+  }
+
+  /* =========================================================
+   *  7. 启动
+   * ========================================================= */
+  if (!location.hash) location.hash = "/login";
+  render();
+})();
+</script>
+</body>
+</html>
