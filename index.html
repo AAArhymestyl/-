@@ -80,7 +80,7 @@
     transform: translate(-50%, -50%);
     width: 120vw;
     height: auto;
-    opacity: 0.08; /* 降低透明度，若隐若现 */
+    opacity: 0.08;
     pointer-events: none;
     z-index: -1;
     mix-blend-mode: screen;
@@ -108,15 +108,14 @@
     font-family: var(--font-display);
     font-size: 64px;
     letter-spacing: 8px;
-    color: #8a0a14; /* 深红底色 */
-    /* 斜向的机械内阴影和外发光 */
+    color: #8a0a14;
     text-shadow: 
-      -1px -1px 1px rgba(255, 255, 255, 0.2), /* 左上高光 */
-      2px 2px 3px rgba(0, 0, 0, 0.9),         /* 右下深阴影 */
-      0 0 15px rgba(232, 17, 35, 0.6);       /* 微弱的底光 */
+      -1px -1px 1px rgba(255, 255, 255, 0.2),
+      2px 2px 3px rgba(0, 0, 0, 0.9),
+      0 0 15px rgba(232, 17, 35, 0.6);
     font-weight: 700;
     position: relative;
-    border-bottom: 2px solid rgba(232, 17, 35, 0.3); /* 底座感 */
+    border-bottom: 2px solid rgba(232, 17, 35, 0.3);
     padding-bottom: 5px;
   }
   .title-sub {
@@ -170,7 +169,7 @@
     gap: 16px;
   }
 
-  /* ============== 分段切换 Segmented Control ============== */
+  /* ============== 分段切换 ============== */
   .segmented {
     position: relative;
     display: flex;
@@ -318,14 +317,171 @@
   .app-placeholder h2 { font-family: var(--font-display); font-size: 28px; color: var(--accent); letter-spacing: 6px; text-shadow: 0 0 10px rgba(232,17,35,0.6); }
   .session-info { font-size: 13px; color: var(--fg-dim); border: 1px solid var(--line-soft); padding: 12px 20px; background: rgba(0,0,0,0.4); }
 
+  /* ============== 加载页 Loading Screen ============== */
+  .loading-screen {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 1;
+    transition: opacity 0.6s ease;
+    overflow: hidden;
+  }
+  .loading-screen.fade-out {
+    opacity: 0;
+    pointer-events: none;
+  }
+  
+  /* 加载页的极淡十字芒星背景 */
+  .loading-star-bg {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 120vw;
+    height: auto;
+    opacity: 0.05;
+    pointer-events: none;
+    mix-blend-mode: screen;
+  }
+
+  .loading-content {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 22px;
+    z-index: 2;
+  }
+
+  /* 月相环 */
+  .moon-ring {
+    position: relative;
+    width: 220px;
+    height: 220px;
+  }
+  .moon-ring-tower {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 130px;
+    height: auto;
+    filter: drop-shadow(0 0 12px rgba(232, 17, 35, 0.8)) drop-shadow(0 0 25px rgba(232, 17, 35, 0.4));
+    animation: emblemPulse 3s infinite alternate ease-in-out;
+    z-index: 2;
+  }
+  .moon-phase {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: #141414;
+    overflow: hidden;
+    opacity: 0.3;
+    transition: opacity 0.15s linear;
+  }
+  .moon-phase::after {
+    content: "";
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #f5f5f5 0%, #c0c0c0 50%, #808080 100%);
+    transform: translateX(var(--moon-offset, 12px));
+  }
+
+  /* 进度条 */
+  .loading-progress-wrap {
+    width: 240px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+  .loading-progress-bar {
+    position: relative;
+    width: 100%;
+    height: 2px;
+    background: rgba(232, 17, 35, 0.15);
+    overflow: visible;
+  }
+  .loading-progress-bar::before,
+  .loading-progress-bar::after {
+    content: "✦";
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--accent-deep);
+    font-size: 8px;
+    opacity: 0.6;
+  }
+  .loading-progress-bar::before { left: -14px; }
+  .loading-progress-bar::after  { right: -14px; }
+  
+  .loading-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #8a0a14, #ff4444, #ffffff);
+    box-shadow: 0 0 8px rgba(232, 17, 35, 0.8);
+    transition: width 0.1s linear;
+  }
+  .loading-progress-text {
+    font-family: "Courier New", "JetBrains Mono", monospace;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--accent-bright);
+    letter-spacing: 2px;
+    text-shadow: 0 0 10px rgba(232, 17, 35, 0.8);
+    line-height: 1;
+  }
+
+  /* 加载文案 */
+  .loading-status {
+    text-align: center;
+    min-height: 40px;
+  }
+  .loading-status-main {
+    font-family: var(--font-ui);
+    font-size: 14px;
+    letter-spacing: 3px;
+    color: var(--fg);
+    transition: opacity 0.25s ease;
+  }
+  .loading-status-main.egg {
+    color: var(--accent-bright);
+    font-family: var(--font-display);
+    font-size: 15px;
+    letter-spacing: 2px;
+    text-shadow: 0 0 12px rgba(232, 17, 35, 0.9);
+  }
+  .loading-status-sub {
+    margin-top: 6px;
+    font-family: var(--font-en);
+    font-size: 10px;
+    letter-spacing: 4px;
+    color: var(--fg-mute);
+    text-transform: uppercase;
+    transition: opacity 0.25s ease;
+  }
+
   /* 滚动条 */
   #app::-webkit-scrollbar { width: 8px; }
   #app::-webkit-scrollbar-track { background: #000; }
   #app::-webkit-scrollbar-thumb { background: var(--accent-deep); }
 
+  /* 小屏适配 */
   @media (max-width: 420px) {
-    .title-main { font-size: 48px; letter-spacing: 4px; }
+    .title-main { 
+      font-size: clamp(32px, 10vw, 48px); 
+      letter-spacing: clamp(2px, 1vw, 4px); 
+    }
     .panel { padding: 22px 18px 18px; }
+    .moon-ring { width: 200px; height: 200px; }
+    .moon-ring-tower { width: 115px; }
+    .loading-progress-wrap { width: 200px; }
   }
   [hidden] { display: none !important; }
 </style>
@@ -373,7 +529,7 @@
       for (const k in attrs) {
         if (k === "class") isSvg ? node.setAttribute("class", attrs[k]) : node.className = attrs[k];
         else if (k === "style") node.setAttribute("style", attrs[k]);
-        else if (k.startsWith("on") && typeof attrs[k] === "function") node.addEventListener(k.slice(2).toLowerCase(), attrs[k]);
+        else if (k.startsWith("@") && typeof attrs[k] === "function") node.addEventListener(k.slice(1), attrs[k]);
         else if (attrs[k] != null) node.setAttribute(k, attrs[k]);
       }
     }
@@ -386,24 +542,29 @@
     return node;
   }
 
-  // 图标库
   function iconPerson() { return el("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "1.6", "stroke-linecap": "round", "stroke-linejoin": "round" }, el("circle", { cx: "12", cy: "8", r: "4" }), el("path", { d: "M4 20c0-4 4-6 8-6s8 2 8 6" })); }
   function iconLock() { return el("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "1.6", "stroke-linecap": "round", "stroke-linejoin": "round" }, el("rect", { x: "5", y: "11", width: "14", height: "9", rx: "1.5" }), el("path", { d: "M8 11V7a4 4 0 0 1 8 0v4" })); }
   function iconMail() { return el("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "1.6", "stroke-linecap": "round", "stroke-linejoin": "round" }, el("rect", { x: "3", y: "5", width: "18", height: "14", rx: "1.5" }), el("path", { d: "M3 7l9 6 9-6" })); }
   function iconCheck() { return el("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "3", "stroke-linecap": "round", "stroke-linejoin": "round" }, el("path", { d: "M4 12l5 5L20 6" })); }
   function iconKey() { return el("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "1.6", "stroke-linecap": "round", "stroke-linejoin": "round" }, el("circle", { cx: "7", cy: "14", r: "4" }), el("path", { d: "M10 12l10-7M16 8l3 3M14 10l2 2" })); }
 
-  // 核心组件
   function emblem() { return el("img", { class: "emblem", src: "assets/tower.png", alt: "神降之塔" }); }
   function titleBlock() { 
     return el("div", { class: "title-block" }, 
       el("div", { class: "title-main", "data-text": "神降计划·塔" }, "神降计划·塔"), 
       el("div", { class: "title-sub" }, "DIVINE SURRENDER PLAN")
-     ); 
-   }
-  function pageWrap(children) { return el("div", { class: "page" }, el("img", { class: "starburst-bg", src: "assets/star.png", alt: "starburst" }), emblem(), titleBlock(), ...children); }
+    ); 
+  }
+  function pageWrap(children) { 
+    return el("div", { class: "page" }, 
+      el("img", { class: "starburst-bg", src: "assets/star.png", alt: "starburst" }), 
+      emblem(), 
+      titleBlock(), 
+      ...children
+    ); 
+  }
 
-  function segBtn(label, role, onClick) { return el("button", { class: "seg-btn", "data-role": role, onclick: onClick }, label); }
+  function segBtn(label, role, onClick) { return el("button", { class: "seg-btn", "data-role": role, "@click": onClick }, label); }
   
   function fieldWrap(labelText, iconSvgNode, opts) {
     const input = el("input", { class: "field-input", type: opts.type || "text", placeholder: opts.placeholder || "", value: opts.value || "", autocomplete: "off" });
@@ -423,14 +584,185 @@
     const labelEl = el("label", { class: "checkbox" }, cb, box, el("span", {}, label));
     labelEl.addEventListener("click", e => {
       if (e.target === cb) return;
-      e.preventDefault(); cb.checked = !cb.checked; onChange(cb.checked);
-      box.style.background = cb.checked ? "var(--accent)" : "rgba(0,0,0,0.6)";
+      e.preventDefault();
+      cb.checked = !cb.checked;
+      onChange(cb.checked);
     });
     return labelEl;
   }
 
   /* =========================================================
-   *  3. 登录页 /login
+   *  3. 加载页 Loading Screen
+   * ========================================================= */
+  /**
+   * 显示加载页
+   * @param {Object} options
+   * @param {Function} options.onComplete - 加载完成后的回调
+   * @param {number} [options.duration=3500] - 加载总时长（毫秒）
+   * @param {string} [options.eggText] - 完成后展示的彩蛋文案
+   */
+  function showLoadingScreen(options) {
+    options = options || {};
+    const duration = options.duration || 3500;
+    const eggText = options.eggText || getDefaultEggText();
+    const onComplete = options.onComplete || function () {};
+
+    // 防止穿透滚动
+    document.body.style.overflow = "hidden";
+
+    // 构建加载页 DOM
+    const screen = el("div", { class: "loading-screen" });
+    
+    // 极淡的十字芒星
+    const starBg = el("img", { class: "loading-star-bg", src: "assets/star.png", alt: "" });
+    
+    // 月相环容器
+    const moonRing = el("div", { class: "moon-ring" });
+    
+    // 生成 24 个月相（半径 88px，容器 220px，圆心 110,110）
+    const PHASE_COUNT = 24;
+    const CENTER = 110;
+    const RADIUS = 88;
+    const phaseEls = [];
+    for (let i = 0; i < PHASE_COUNT; i++) {
+      const angle = (i / PHASE_COUNT) * 2 * Math.PI - Math.PI / 2; // 从顶部开始
+      const cx = CENTER + RADIUS * Math.cos(angle);
+      const cy = CENTER + RADIUS * Math.sin(angle);
+      
+      // 相位值：从 0（新月）→ 1（满月）→ 0（新月）
+      // 用 cos 计算：i=0 时 phase=0；i=12 时 phase=1；i=24 时 phase=0
+      const phase = (1 - Math.cos((i / PHASE_COUNT) * 2 * Math.PI)) / 2;
+      
+      // 亮色圆的偏移：phase=0 → 12px（完全移出）；phase=1 → 0px（完全覆盖）
+      const offset = (1 - phase) * 12;
+      
+      const phaseEl = el("div", {
+        class: "moon-phase",
+        style: `left: ${cx}px; top: ${cy}px; --moon-offset: ${offset}px;`
+      });
+      phaseEls.push(phaseEl);
+      moonRing.appendChild(phaseEl);
+    }
+    
+    // 中央塔徽章
+    const towerEl = el("img", { class: "moon-ring-tower", src: "assets/tower.png", alt: "神降之塔" });
+    moonRing.appendChild(towerEl);
+
+    // 进度条
+    const progressFill = el("div", { class: "loading-progress-fill" });
+    const progressText = el("div", { class: "loading-progress-text" }, "0%");
+    const progressWrap = el("div", { class: "loading-progress-wrap" },
+      el("div", { class: "loading-progress-bar" }, progressFill),
+      progressText
+    );
+
+    // 文案
+    const statusMain = el("div", { class: "loading-status-main" }, "正在建立连接…");
+    const statusSub = el("div", { class: "loading-status-sub" }, "ESTABLISHING LINK");
+    const statusWrap = el("div", { class: "loading-status" }, statusMain, statusSub);
+
+    // 组装
+    const content = el("div", { class: "loading-content" }, moonRing, progressWrap, statusWrap);
+    screen.appendChild(starBg);
+    screen.appendChild(content);
+    document.body.appendChild(screen);
+
+    // 阶段文案
+    const phases = [
+      { start: 0.00, end: 0.30, main: "正在建立连接…", sub: "ESTABLISHING LINK" },
+      { start: 0.30, end: 0.65, main: "正在验证密钥…", sub: "VERIFYING CREDENTIALS" },
+      { start: 0.65, end: 0.90, main: "正在唤醒塔…", sub: "AWAKENING THE TOWER" },
+      { start: 0.90, end: 1.00, main: "系统就绪", sub: "SYSTEM READY" }
+    ];
+
+    // 缓动函数：先快后慢
+    function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+
+    // 更新月相环的点亮
+    function updateMoonRing(elapsed) {
+      const cycle = 3500;
+      const t = (elapsed % cycle) / cycle; // 0-1
+      phaseEls.forEach((el, i) => {
+        const position = i / PHASE_COUNT;
+        // 环形距离
+        let dist = Math.abs(position - t);
+        if (dist > 0.5) dist = 1 - dist;
+        // 亮度：距离越近越亮（光斑宽度由 8 控制）
+        const brightness = Math.max(0, 1 - dist * 8);
+        el.style.opacity = 0.3 + brightness * 0.7;
+      });
+    }
+
+    // 动画主循环
+    const startTime = performance.now();
+    let eggShown = false;
+    let currentMain = statusMain.textContent;
+
+    function tick(now) {
+      const elapsed = now - startTime;
+      const t = Math.min(elapsed / duration, 1);
+      const progress = easeOutCubic(t);
+
+      // 更新进度条与百分比
+      progressFill.style.width = `${progress * 100}%`;
+      progressText.textContent = `${Math.round(progress * 100)}%`;
+
+      // 更新月相环
+      updateMoonRing(elapsed);
+
+      // 更新文案
+      if (t < 1) {
+        for (const p of phases) {
+          if (t >= p.start && t < p.end) {
+            if (currentMain !== p.main) {
+              currentMain = p.main;
+              statusMain.textContent = p.main;
+              statusMain.classList.remove("egg");
+              statusSub.textContent = p.sub;
+              statusSub.style.opacity = 1;
+            }
+            break;
+          }
+        }
+      }
+
+      // 触发彩蛋
+      if (t >= 1 && !eggShown) {
+        eggShown = true;
+        statusMain.textContent = eggText;
+        statusMain.classList.add("egg");
+        statusSub.textContent = "";
+        statusSub.style.opacity = 0;
+      }
+
+      if (t < 1) {
+        requestAnimationFrame(tick);
+      } else {
+        // 彩蛋展示 800ms 后淡出
+        setTimeout(() => {
+          screen.classList.add("fade-out");
+          setTimeout(() => {
+            if (screen.parentNode) screen.parentNode.removeChild(screen);
+            document.body.style.overflow = "";
+            onComplete();
+          }, 600);
+        }, 800);
+      }
+    }
+
+    requestAnimationFrame(tick);
+  }
+
+  // 根据当前会话决定默认彩蛋文案
+  function getDefaultEggText() {
+    const s = getSession();
+    if (!s) return "欢迎来到神降计划。";
+    if (s.role === "admin") return "欢迎回归神降计划隐秘系统，管理者。";
+    return "玩家/契约者，欢迎来到神降计划隐秘系统。";
+  }
+
+  /* =========================================================
+   *  4. 登录页 /login
    * ========================================================= */
   function renderLogin(root) {
     let role = "player", name = "", pwd = "", auto = false;
@@ -449,7 +781,7 @@
           checkboxEl("自动登录", checked => { auto = checked; }),
           el("a", { class: "link", href: "#/forgot-password", textContent: "忘记密码？" })
         ),
-        el("button", { class: "btn-primary", onclick: submit }, "载入"),
+        el("button", { class: "btn-primary", "@click": submit }, "载入"),
         el("div", { class: "panel-footer" },
           "是否注册", el("a", { class: "link", href: "#/register", style: "margin: 0 4px;", id: "reg-link" }, role === "player" ? "玩家/契约者" : "管理者"), "?"
         )
@@ -459,11 +791,12 @@
     function refreshRoleUI() {
       const segs = page.querySelectorAll(".seg-btn");
       const slider = page.querySelector(".seg-slider");
+      if (!segs.length || !slider) return;
+
       segs.forEach(s => s.classList.toggle("active", s.dataset.role === role));
       
       const activeSeg = Array.from(segs).find(s => s.dataset.role === role);
-      if (activeSeg && slider) {
-        // 修复：确保基于父容器准确计算宽度和位置
+      if (activeSeg) {
         slider.style.width = `${activeSeg.offsetWidth}px`;
         slider.style.transform = `translateX(${activeSeg.offsetLeft}px)`;
       }
@@ -485,16 +818,30 @@
       }
       banner.hidden = true;
       setSession({ role, name: name.trim(), ts: Date.now(), auto });
-      navigate("/app");
+      
+      // 登录成功后显示加载页
+      showLoadingScreen({
+        onComplete: () => navigate("/app")
+      });
     }
 
-    // 先挂载 DOM，再计算滑块宽度（解决初始化报错）
+    function onResize() { refreshRoleUI(); }
+    window.addEventListener("resize", onResize);
+    function cleanup() {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("hashchange", cleanup);
+    }
+    window.addEventListener("hashchange", cleanup);
+
     root.appendChild(pageWrap([page]));
     requestAnimationFrame(() => { refreshRoleUI(); });
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => refreshRoleUI());
+    }
   }
 
   /* =========================================================
-   *  4. 注册页 /register
+   *  5. 注册页 /register
    * ========================================================= */
   function renderRegister(root) {
     const form = { username: "", displayName: "", password: "", confirm: "" };
@@ -507,7 +854,7 @@
         el("div", { class: "field" }, el("label", { class: "field-label" }, "密码"), inputWithIcon("password", iconLock(), "至少 8 位，含字母与数字", val => { form.password = val; errors.password = validatePassword(val); if (form.confirm) errors.confirm = val !== form.confirm ? "两次密码不一致" : ""; refreshErrors(); }, "password"), errBox("password")),
         el("div", { class: "field" }, el("label", { class: "field-label" }, "确认密码"), inputWithIcon("confirm", iconLock(), "再次输入密码", val => { form.confirm = val; errors.confirm = val !== form.password ? "两次密码不一致" : ""; refreshErrors(); }, "password"), errBox("confirm")),
         el("div", { class: "banner", hidden: true }),
-        el("button", { class: "btn-primary", onclick: submitRegister }, "完成注册"),
+        el("button", { class: "btn-primary", "@click": submitRegister }, "完成注册"),
         el("div", { class: "panel-footer" }, "已有身份？", el("a", { class: "link", href: "#/login", style: "margin-left:4px;" }, "返回登录"))
       )
     );
@@ -529,7 +876,11 @@
       refreshErrors();
       if (Object.values(errors).some(e => e)) { banner.hidden = false; banner.className = "banner"; banner.textContent = "请修正表单错误后再提交。"; return; }
       setSession({ role: "player", name: form.displayName, username: form.username, ts: Date.now(), auto: false });
-      navigate("/app");
+      
+      // 注册成功后显示加载页
+      showLoadingScreen({
+        onComplete: () => navigate("/app")
+      });
     }
 
     function inputWithIcon(key, iconNode, placeholder, onInput, type) {
@@ -546,14 +897,14 @@
   function validatePassword(v) { if (!v) return "密码不能为空"; if (v.length < 8) return "至少 8 位"; if (!/[A-Za-z]/.test(v) || !/[0-9]/.test(v)) return "须含字母与数字"; return ""; }
 
   /* =========================================================
-   *  5. 找回密码 /forgot-password
+   *  6. 找回密码 /forgot-password
    * ========================================================= */
   function renderForgotPassword(root) {
     let step = 1, email = "", code = "", newPwd = "", confirmPwd = "";
     const page = el("div", { class: "panel" },
       el("div", { class: "panel-inner" },
         stepperEl(), el("div", { class: "banner", hidden: true }), el("div", { id: "step-body" }),
-        el("button", { class: "btn-primary", id: "step-btn", onclick: nextStep }, "发送重置链接"),
+        el("button", { class: "btn-primary", id: "step-btn", "@click": nextStep }, "发送重置链接"),
         el("div", { class: "panel-footer" }, el("a", { class: "link", href: "#/login" }, "返回登录"))
       )
     );
@@ -576,8 +927,11 @@
 
       if (step === 1) { body.appendChild(el("div", { class: "field" }, el("label", { class: "field-label" }, "邮箱"), el("div", { class: "field-input-wrap" }, el("div", { class: "field-icon" }, iconMail()), bindInput("email", "请输入注册邮箱", val => { email = val; })), el("div", { class: "field-error" }, ""))); btn.textContent = "发送重置链接"; }
       else if (step === 2) { body.appendChild(el("div", { class: "field" }, el("label", { class: "field-label" }, "验证码"), el("div", { class: "field-input-wrap" }, el("div", { class: "field-icon" }, iconKey()), bindInput("code", "请输入邮件中的 6 位验证码", val => { code = val; })), el("div", { class: "field-error" }, ""))); btn.textContent = "验证身份"; }
-      else { body.appendChild(el("div", { class: "field" }, el("label", { class: "field-label" }, "新密码"), el("div", { class: "field-input-wrap" }, el("div", { class: "field-icon" }, iconLock()), bindInput("newPwd", "至少 8 位，含字母与数字", val => { newPwd = val; }, "password")), el("div", { class: "field-error" }, "")));
-             body.appendChild(el("div", { class: "field" }, el("label", { class: "field-label" }, "确认新密码"), el("div", { class: "field-input-wrap" }, el("div", { class: "field-icon" }, iconLock()), bindInput("confirmPwd", "再次输入新密码", val => { confirmPwd = val; }, "password")), el("div", { class: "field-error" }, ""))); btn.textContent = "完成重置"; }
+      else { 
+        body.appendChild(el("div", { class: "field" }, el("label", { class: "field-label" }, "新密码"), el("div", { class: "field-input-wrap" }, el("div", { class: "field-icon" }, iconLock()), bindInput("newPwd", "至少 8 位，含字母与数字", val => { newPwd = val; }, "password")), el("div", { class: "field-error" }, "")));
+        body.appendChild(el("div", { class: "field" }, el("label", { class: "field-label" }, "确认新密码"), el("div", { class: "field-input-wrap" }, el("div", { class: "field-icon" }, iconLock()), bindInput("confirmPwd", "再次输入新密码", val => { confirmPwd = val; }, "password")), el("div", { class: "field-error" }, ""))); 
+        btn.textContent = "完成重置"; 
+      }
     }
 
     function bindInput(name, placeholder, onInput, type) { const input = el("input", { class: "field-input", type: type || "text", placeholder, autocomplete: "off" }); input.addEventListener("input", () => onInput(input.value)); return input; }
@@ -602,7 +956,7 @@
   }
 
   /* =========================================================
-   *  6. 主界面占位 /app
+   *  7. 主界面占位 /app
    * ========================================================= */
   function renderApp(root) {
     const s = getSession();
@@ -612,15 +966,26 @@
       el("h2", {}, "欢迎，" + s.name),
       el("div", { class: "session-info" }, "身份：" + (s.role === "player" ? "玩家 / 契约者" : "管理者") + " · 登录时间：" + new Date(s.ts).toLocaleString("zh-CN")),
       el("p", { style: "color: var(--fg-mute); font-size:13px; max-width:420px; text-align:center;" }, "主界面待后续规划。此页面仅为登录会话验证占位。"),
-      el("button", { class: "btn-primary", style: "width: 200px; margin-top: 18px;", onclick: () => { clearSession(); navigate("/login"); } }, "退出会话")
+      el("button", { class: "btn-primary", style: "width: 200px; margin-top: 18px;", "@click": () => { clearSession(); navigate("/login"); } }, "退出会话")
     ));
   }
 
   /* =========================================================
-   *  7. 启动
+   *  8. 启动
    * ========================================================= */
-  if (!location.hash) location.hash = "/login";
+  if (!location.hash) history.replaceState(null, "", "#/login");
   render();
+
+  // 首次打开网址时显示加载页
+  // 若已有会话，加载完成后自动跳转到主控台
+  const existingSession = getSession();
+  showLoadingScreen({
+    onComplete: () => {
+      if (existingSession && getPath() === "/login") {
+        navigate("/app");
+      }
+    }
+  });
 })();
 </script>
 </body>
