@@ -4,10 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>神降计划·塔</title>
+<!-- 引入地图拖拽缩放库 -->
+<script src="https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
 <style>
-  /* ============== 主题变量 ============== */
+  /* =========================================================
+   *  全局主题变量
+   * ========================================================= */
   :root {
     --bg: #000000;
+    --panel-bg: rgba(10, 2, 2, 0.75);
     --fg: #ffffff;
     --fg-dim: #aaaaaa;
     --fg-mute: #6a6a6a;
@@ -16,9 +21,20 @@
     --accent-deep: #8a0a14;
     --line-soft: rgba(232, 17, 35, 0.25);
     --glow: 0 0 14px rgba(232, 17, 35, 0.55), 0 0 28px rgba(232, 17, 35, 0.25);
+    
     --font-display: "STKaiti", "KaiTi", "华文新魏", "STSong", "SimSun", serif;
     --font-ui: "PingFang SC", "Microsoft YaHei", "Source Han Sans CN", sans-serif;
     --font-en: "Cinzel", "Trajan Pro", "Times New Roman", serif;
+    
+    --topbar-h: 64px;
+    --sidebar-w: 240px;
+    
+    /* 难度颜色 */
+    --diff-d: #4caf50;
+    --diff-c: #2196f3;
+    --diff-b: #9c27b0;
+    --diff-a: #ff9800;
+    --diff-s: #e81123;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -31,7 +47,9 @@
     overflow: hidden;
   }
 
-  /* 背景图与遮罩 */
+  /* =========================================================
+   *  背景层
+   * ========================================================= */
   body {
     background: url('assets/bg.png') no-repeat center center / cover;
     background-color: #000;
@@ -62,434 +80,343 @@
     overflow-y: auto;
   }
 
-  /* ============== 页面通用容器 ============== */
+  /* =========================================================
+   *  登录/注册页通用组件样式
+   * ========================================================= */
   .page {
-    min-height: 100%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 32px 16px 64px;
-    gap: 18px;
+    min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 32px 16px 64px; gap: 18px;
   }
-
-  /* ============== 十字芒星背景 ============== */
   .starburst-bg {
-    position: absolute;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    width: 120vw;
-    height: auto;
-    opacity: 0.08;
-    pointer-events: none;
-    z-index: -1;
-    mix-blend-mode: screen;
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 120vw; height: auto; opacity: 0.08; pointer-events: none; z-index: -1; mix-blend-mode: screen;
   }
-
-  /* ============== 徽章 Emblem ============== */
   .emblem {
-    width: 200px;
-    height: auto;
-    position: relative;
-    background: transparent !important;
-    border: none !important;
+    width: 200px; height: auto; position: relative; background: transparent !important; border: none !important;
     filter: drop-shadow(0 0 15px rgba(232, 17, 35, 0.8)) drop-shadow(0 0 30px rgba(232, 17, 35, 0.4));
     animation: emblemPulse 4s infinite alternate ease-in-out;
   }
-  
   @keyframes emblemPulse {
     0% { filter: drop-shadow(0 0 8px rgba(232, 17, 35, 0.5)) drop-shadow(0 0 15px rgba(232, 17, 35, 0.2)); }
     100% { filter: drop-shadow(0 0 20px rgba(232, 17, 35, 0.9)) drop-shadow(0 0 40px rgba(232, 17, 35, 0.6)); }
   }
-
-  /* ============== 标题 ============== */
   .title-block { text-align: center; line-height: 1; }
   .title-main {
-    font-family: var(--font-display);
-    font-size: 64px;
-    letter-spacing: 8px;
-    color: #8a0a14;
-    text-shadow: 
-      -1px -1px 1px rgba(255, 255, 255, 0.2),
-      2px 2px 3px rgba(0, 0, 0, 0.9),
-      0 0 15px rgba(232, 17, 35, 0.6);
-    font-weight: 700;
-    position: relative;
-    border-bottom: 2px solid rgba(232, 17, 35, 0.3);
-    padding-bottom: 5px;
+    font-family: var(--font-display); font-size: 64px; letter-spacing: 8px; color: #8a0a14;
+    text-shadow: -1px -1px 1px rgba(255, 255, 255, 0.2), 2px 2px 3px rgba(0, 0, 0, 0.9), 0 0 15px rgba(232, 17, 35, 0.6);
+    font-weight: 700; position: relative; border-bottom: 2px solid rgba(232, 17, 35, 0.3); padding-bottom: 5px;
   }
-  .title-sub {
-    margin-top: 6px;
-    font-family: var(--font-en);
-    font-size: 12px;
-    letter-spacing: 6px;
-    color: var(--fg-dim);
-    text-transform: uppercase;
-  }
-
-  /* ============== 八角形面板 ============== */
+  .title-sub { margin-top: 6px; font-family: var(--font-en); font-size: 12px; letter-spacing: 6px; color: var(--fg-dim); text-transform: uppercase; }
+  
   .panel {
-    width: min(380px, 85vw);
-    background: rgba(8, 0, 0, 0.75);
-    backdrop-filter: blur(6px);
-    padding: 28px 26px 22px;
-    position: relative;
+    width: min(380px, 85vw); background: rgba(8, 0, 0, 0.75); backdrop-filter: blur(6px); padding: 28px 26px 22px; position: relative;
     clip-path: polygon(18px 0, calc(100% - 18px) 0, 100% 18px, 100% calc(100% - 18px), calc(100% - 18px) 100%, 18px 100%, 0 calc(100% - 18px), 0 18px);
-    background-image: 
-        linear-gradient(rgba(232, 17, 35, 0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(232, 17, 35, 0.03) 1px, transparent 1px);
+    background-image: linear-gradient(rgba(232, 17, 35, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(232, 17, 35, 0.03) 1px, transparent 1px);
     background-size: 20px 20px, 20px 20px;
   }
   .panel::before {
-    content: "";
-    position: absolute; inset: 1.5px;
-    clip-path: inherit;
+    content: ""; position: absolute; inset: 1.5px; clip-path: inherit;
     background: linear-gradient(180deg, rgba(232,17,35,0.85), rgba(232,17,35,0.35) 12%, rgba(232,17,35,0.35) 88%, rgba(232,17,35,0.85));
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-            mask-composite: exclude;
-    padding: 1.5px;
-    pointer-events: none;
-    z-index: 2;
+    -webkit-mask-composite: xor; mask-composite: exclude; padding: 1.5px; pointer-events: none; z-index: 2;
   }
-  .panel::after {
-    content: "";
-    position: absolute; inset: 0;
-    background:
-      radial-gradient(circle at 8px 8px, var(--accent-bright) 0 2px, transparent 3px),
-      radial-gradient(circle at calc(100% - 8px) 8px, var(--accent-bright) 0 2px, transparent 3px),
-      radial-gradient(circle at 8px calc(100% - 8px), var(--accent-bright) 0 2px, transparent 3px),
-      radial-gradient(circle at calc(100% - 8px) calc(100% - 8px), var(--accent-bright) 0 2px, transparent 3px);
-    pointer-events: none;
-    z-index: 3;
-  }
-  .panel-inner {
-    position: relative; z-index: 4;
-    display: flex; flex-direction: column;
-    gap: 16px;
-  }
+  .panel-inner { position: relative; z-index: 4; display: flex; flex-direction: column; gap: 16px; }
 
-  /* ============== 分段切换 ============== */
-  .segmented {
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 18px;
-    margin-bottom: 4px;
-    padding: 4px 0;
-  }
+  /* 登录表单 */
+  .segmented { position: relative; display: flex; align-items: center; justify-content: center; gap: 18px; margin-bottom: 4px; padding: 4px 0; }
   .seg-slider {
-    position: absolute;
-    top: 0; left: 0;
-    height: 100%;
-    background: linear-gradient(135deg, var(--accent-deep), var(--accent));
+    position: absolute; top: 0; left: 0; height: 100%; background: linear-gradient(135deg, var(--accent-deep), var(--accent));
     clip-path: polygon(8px 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 8px 100%, 0 50%);
-    box-shadow: var(--glow);
-    transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.3s ease;
-    z-index: 1;
+    box-shadow: var(--glow); transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.3s ease; z-index: 1;
   }
   .seg-btn {
-    position: relative;
-    z-index: 2;
-    background: transparent;
-    border: none;
-    color: var(--fg-dim);
-    font-family: var(--font-ui);
-    font-size: 14px;
-    letter-spacing: 1.5px;
-    cursor: pointer;
-    padding: 8px 14px;
-    transition: color 0.3s ease;
+    position: relative; z-index: 2; background: transparent; border: none; color: var(--fg-dim);
+    font-family: var(--font-ui); font-size: 14px; letter-spacing: 1.5px; cursor: pointer; padding: 8px 14px; transition: color 0.3s ease;
   }
   .seg-btn:hover { color: var(--fg); }
   .seg-btn.active { color: var(--fg); font-weight: 600; }
 
-  /* ============== 表单 ============== */
   .field { display: flex; flex-direction: column; gap: 6px; }
   .field-label { font-size: 12px; color: var(--fg-dim); letter-spacing: 2px; }
-  .field-input-wrap {
-    position: relative;
-    display: flex; align-items: center;
-    background: rgba(0,0,0,0.55);
-    border: 1px solid var(--line-soft);
-    transition: border-color .2s, box-shadow .2s;
-  }
-  .field-input-wrap:focus-within {
-    border-color: var(--accent);
-    box-shadow: inset 0 0 8px rgba(232,17,35,0.35);
-  }
-  .field-icon {
-    width: 38px; height: 38px;
-    display: flex; align-items: center; justify-content: center;
-    color: var(--fg-dim);
-    flex-shrink: 0;
-    transition: color 0.2s;
-  }
+  .field-input-wrap { position: relative; display: flex; align-items: center; background: rgba(0,0,0,0.55); border: 1px solid var(--line-soft); transition: border-color .2s, box-shadow .2s; }
+  .field-input-wrap:focus-within { border-color: var(--accent); box-shadow: inset 0 0 8px rgba(232,17,35,0.35); }
+  .field-icon { width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; color: var(--fg-dim); flex-shrink: 0; transition: color 0.2s; }
   .field-input-wrap:focus-within .field-icon { color: var(--accent); }
   .field-icon svg { width: 16px; height: 16px; }
-  .field-input {
-    flex: 1;
-    background: transparent;
-    border: none;
-    outline: none;
-    color: var(--fg);
-    font-family: var(--font-ui);
-    font-size: 14px;
-    padding: 10px 12px 10px 0;
-  }
+  .field-input { flex: 1; background: transparent; border: none; outline: none; color: var(--fg); font-family: var(--font-ui); font-size: 14px; padding: 10px 12px 10px 0; }
   .field-input::placeholder { color: var(--fg-mute); }
-  .field-input:-webkit-autofill {
-    -webkit-text-fill-color: var(--fg);
-    -webkit-box-shadow: 0 0 0 1000px rgba(0,0,0,0.55) inset;
-  }
   .field-error { color: var(--accent-bright); font-size: 11px; min-height: 14px; line-height: 14px; }
 
-  /* ============== 表单辅助行 ============== */
   .form-aux { display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
   .checkbox { display: flex; align-items: center; gap: 6px; color: var(--fg-dim); cursor: pointer; user-select: none; }
   .checkbox input { display: none; }
-  .checkbox .box {
-    width: 14px; height: 14px;
-    border: 1px solid var(--accent);
-    background: rgba(0,0,0,0.6);
-    display: flex; align-items: center; justify-content: center;
-    transition: background .15s;
-  }
+  .checkbox .box { width: 14px; height: 14px; border: 1px solid var(--accent); background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; transition: background .15s; }
   .checkbox input:checked + .box { background: var(--accent); }
   .checkbox .box svg { width: 10px; height: 10px; color: #fff; opacity: 0; transition: opacity .15s; }
   .checkbox input:checked + .box svg { opacity: 1; }
-
-  .link {
-    color: var(--fg-dim); text-decoration: none; font-size: 12px;
-    cursor: pointer; border-bottom: 1px dotted var(--accent-deep); transition: color .15s;
-  }
+  .link { color: var(--fg-dim); text-decoration: none; font-size: 12px; cursor: pointer; border-bottom: 1px dotted var(--accent-deep); transition: color .15s; }
   .link:hover { color: var(--accent-bright); }
-
-  /* ============== 主按钮 ============== */
   .btn-primary {
-    width: 100%; padding: 12px 0;
-    background: linear-gradient(180deg, #b30000 0%, #4a0000 50%, #110000 100%);
-    color: #ffffff;
-    border: 1px solid rgba(255, 100, 100, 0.5);
-    font-family: var(--font-ui); font-size: 16px; letter-spacing: 4px; font-weight: 600;
-    cursor: pointer;
+    width: 100%; padding: 12px 0; background: linear-gradient(180deg, #b30000 0%, #4a0000 50%, #110000 100%); color: #ffffff;
+    border: 1px solid rgba(255, 100, 100, 0.5); font-family: var(--font-ui); font-size: 16px; letter-spacing: 4px; font-weight: 600; cursor: pointer;
     clip-path: polygon(10px 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 10px 100%, 0 50%);
-    box-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.4), inset 0 -4px 8px rgba(0, 0, 0, 0.8), 0 0 15px rgba(232, 17, 35, 0.7);
-    transition: all 0.2s ease;
-    text-shadow: 0 0 8px rgba(255, 255, 255, 0.8);
+    box-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.4), inset 0 -4px 8px rgba(0, 0, 0, 0.8), 0 0 15px rgba(232, 17, 35, 0.7); transition: all 0.2s ease; text-shadow: 0 0 8px rgba(255, 255, 255, 0.8);
   }
-  .btn-primary:hover {
-    filter: brightness(1.2);
-    box-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.6), inset 0 -4px 8px rgba(0, 0, 0, 0.8), 0 0 25px rgba(232, 17, 35, 1);
-  }
+  .btn-primary:hover { filter: brightness(1.2); box-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.6), inset 0 -4px 8px rgba(0, 0, 0, 0.8), 0 0 25px rgba(232, 17, 35, 1); }
   .btn-primary:active { transform: scale(0.98); }
-  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-
-  /* ============== 底部链接与版本 ============== */
   .panel-footer { text-align: center; font-size: 12px; color: var(--fg-dim); }
-  .version {
-    position: fixed; left: 0; right: 0; bottom: 12px;
-    text-align: center; font-size: 11px; color: #5a5a5a; letter-spacing: 2px; z-index: 5;
-  }
+  .banner { width: 100%; padding: 8px 12px; background: rgba(232,17,35,0.08); border-left: 2px solid var(--accent); font-size: 12px; color: var(--fg-dim); }
+  .banner.success { background: rgba(76,175,80,0.06); border-color: #4caf50; }
 
-  /* ============== 找回密码流程 ============== */
+  /* 找回密码 */
   .stepper { display: flex; justify-content: center; align-items: center; gap: 8px; margin-bottom: 6px; }
   .step-dot { display: flex; align-items: center; gap: 6px; color: var(--fg-mute); font-size: 11px; letter-spacing: 1px; }
-  .step-dot .num {
-    width: 18px; height: 18px; border: 1px solid var(--line-soft);
-    display: flex; align-items: center; justify-content: center;
-    font-family: var(--font-en); font-size: 10px;
-    clip-path: polygon(4px 0, calc(100% - 4px) 0, 100% 50%, calc(100% - 4px) 100%, 4px 100%, 0 50%);
-  }
+  .step-dot .num { width: 18px; height: 18px; border: 1px solid var(--line-soft); display: flex; align-items: center; justify-content: center; font-family: var(--font-en); font-size: 10px; clip-path: polygon(4px 0, calc(100% - 4px) 0, 100% 50%, calc(100% - 4px) 100%, 4px 100%, 0 50%); }
   .step-dot.active { color: var(--fg); }
   .step-dot.active .num { border-color: var(--accent); background: var(--accent-deep); color: #fff; box-shadow: 0 0 6px rgba(232,17,35,0.6); }
   .step-line { width: 24px; height: 1px; background: var(--line-soft); }
 
-  /* ============== 提示横幅 ============== */
-  .banner { width: 100%; padding: 8px 12px; background: rgba(232,17,35,0.08); border-left: 2px solid var(--accent); font-size: 12px; color: var(--fg-dim); }
-  .banner.success { background: rgba(76,175,80,0.06); border-color: #4caf50; }
-
-  /* ============== 主界面占位 ============== */
-  .app-placeholder {
-    min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; color: var(--fg-dim);
-  }
-  .app-placeholder h2 { font-family: var(--font-display); font-size: 28px; color: var(--accent); letter-spacing: 6px; text-shadow: 0 0 10px rgba(232,17,35,0.6); }
-  .session-info { font-size: 13px; color: var(--fg-dim); border: 1px solid var(--line-soft); padding: 12px 20px; background: rgba(0,0,0,0.4); }
-
-  /* ============== 加载页 Loading Screen ============== */
-  .loading-screen {
-    position: fixed;
-    inset: 0;
-    background: #000;
-    z-index: 9999;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 1;
-    transition: opacity 0.6s ease;
-    overflow: hidden;
-  }
-  .loading-screen.fade-out {
-    opacity: 0;
-    pointer-events: none;
-  }
+  /* =========================================================
+   *  主系统面板 (Sidebar + Topbar + Main)
+   * ========================================================= */
+  .app-layout { display: flex; height: 100vh; width: 100vw; overflow: hidden; }
   
-  /* 加载页的极淡十字芒星背景 */
-  .loading-star-bg {
-    position: absolute;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    width: 120vw;
-    height: auto;
-    opacity: 0.05;
-    pointer-events: none;
-    mix-blend-mode: screen;
+  /* 侧边栏 */
+  .sidebar {
+    width: var(--sidebar-w); height: 100vh; background: rgba(5, 0, 0, 0.95); border-right: 1px solid var(--line-soft);
+    display: flex; flex-direction: column; transition: transform 0.3s ease; z-index: 1000;
   }
+  .sidebar-logo {
+    height: var(--topbar-h); display: flex; align-items: center; justify-content: space-between;
+    padding: 0 20px; font-family: var(--font-display); font-size: 20px; font-weight: 700; letter-spacing: 2px;
+    border-bottom: 1px solid var(--line-soft); color: #fff;
+  }
+  .sidebar-logo span { color: var(--accent); margin-right: 8px; font-size: 24px; }
+  .menu-list { flex: 1; padding: 20px 0; overflow-y: auto; }
+  .menu-item {
+    display: flex; align-items: center; padding: 14px 20px; cursor: pointer;
+    color: var(--fg-dim); text-decoration: none; transition: all 0.2s; border-left: 3px solid transparent;
+  }
+  .menu-item:hover { background: rgba(232, 17, 35, 0.05); color: #fff; }
+  .menu-item.active { background: linear-gradient(90deg, rgba(232, 17, 35, 0.2), transparent); border-left-color: var(--accent); color: #fff; }
+  .menu-icon { width: 20px; height: 20px; margin-right: 12px; fill: currentColor; flex-shrink: 0; }
+  .menu-text { display: flex; flex-direction: column; }
+  .menu-cn { font-size: 14px; letter-spacing: 1px; }
+  .menu-en { font-size: 10px; font-family: var(--font-en); opacity: 0.5; margin-top: 2px; }
+  .sidebar-footer { padding: 15px 20px; font-size: 10px; color: var(--fg-mute); border-top: 1px solid var(--line-soft); }
 
-  .loading-content {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 22px;
-    z-index: 2;
-  }
+  /* 移动端遮罩 */
+  .sidebar-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(2px); z-index: 990; opacity: 0; pointer-events: none; transition: opacity 0.3s ease; }
+  .sidebar-overlay.active { opacity: 1; pointer-events: auto; }
 
-  /* 月相环 */
-  .moon-ring {
-    position: relative;
-    width: 220px;
-    height: 220px;
+  /* 主内容区 */
+  .main-wrapper { flex: 1; display: flex; flex-direction: column; height: 100vh; z-index: 10; position: relative; }
+  
+  /* 顶栏 */
+  .topbar {
+    height: var(--topbar-h); display: flex; align-items: center; justify-content: space-between;
+    padding: 0 24px; background: rgba(0,0,0,0.5); border-bottom: 1px solid var(--line-soft); backdrop-filter: blur(8px);
   }
-  .moon-ring-tower {
-    position: absolute;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    width: 130px;
-    height: auto;
-    filter: drop-shadow(0 0 12px rgba(232, 17, 35, 0.8)) drop-shadow(0 0 25px rgba(232, 17, 35, 0.4));
-    animation: emblemPulse 3s infinite alternate ease-in-out;
-    z-index: 2;
+  .topbar-left { display: flex; align-items: center; gap: 16px; }
+  .mobile-menu-btn { display: none; background: none; border: none; color: #fff; font-size: 24px; cursor: pointer; }
+  .topbar-title { font-size: 16px; letter-spacing: 2px; color: var(--fg-dim); }
+  .topbar-title span { color: var(--accent); }
+  
+  .topbar-right { display: flex; align-items: center; gap: 20px; font-size: 13px; }
+  .clock { font-family: monospace; font-size: 15px; color: var(--fg); letter-spacing: 1px; }
+  
+  /* 身份切换下拉框（仅管理员可见） */
+  .role-switch-wrap { position: relative; display: none; } 
+  .role-switch-wrap.visible { display: block; }
+  .role-switch-btn {
+    padding: 6px 14px; background: rgba(255, 179, 0, 0.1); border: 1px solid #ffb300;
+    color: #ffca28; border-radius: 4px; font-size: 12px; cursor: pointer; letter-spacing: 1px; transition: all 0.2s;
+    display: flex; align-items: center; gap: 6px;
   }
-  .moon-phase {
-    position: absolute;
-    width: 12px;
-    height: 12px;
-    transform: translate(-50%, -50%);
-    border-radius: 50%;
-    background: #141414;
-    overflow: hidden;
-    opacity: 0.3;
-    transition: opacity 0.15s linear;
+  .role-switch-btn:hover { background: #ffb300; color: #000; }
+  .role-dropdown {
+    position: absolute; top: 100%; right: 0; margin-top: 8px; background: rgba(10, 2, 2, 0.95);
+    border: 1px solid var(--line-soft); border-radius: 4px; overflow: hidden; width: 140px;
+    display: none; flex-direction: column; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.5); backdrop-filter: blur(10px);
   }
-  .moon-phase::after {
-    content: "";
-    position: absolute;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #f5f5f5 0%, #c0c0c0 50%, #808080 100%);
-    transform: translateX(var(--moon-offset, 12px));
+  .role-dropdown.show { display: flex; }
+  .role-dropdown-item {
+    padding: 10px 16px; color: var(--fg-dim); font-size: 13px; cursor: pointer; transition: background 0.2s;
+    border-left: 2px solid transparent;
   }
+  .role-dropdown-item:hover { background: rgba(232, 17, 35, 0.2); color: #fff; }
+  .role-dropdown-item.active { color: var(--accent-bright); border-left-color: var(--accent); background: rgba(232,17,35,0.1); }
 
-  /* 进度条 */
-  .loading-progress-wrap {
-    width: 240px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
+  .btn-logout { color: var(--fg-mute); text-decoration: none; font-size: 13px; cursor: pointer; }
+  .btn-logout:hover { color: var(--accent); }
+
+  /* 动态内容容器 */
+  .content-container { flex: 1; padding: 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 24px; }
+
+  /* =========================================================
+   *  主控台页面专用样式
+   * ========================================================= */
+  .panel-cut {
+    background: var(--panel-bg); border: 1px solid var(--line-soft);
+    clip-path: polygon(12px 0, calc(100% - 12px) 0, 100% 12px, 100% calc(100% - 12px), calc(100% - 12px) 100%, 12px 100%, 0 calc(100% - 12px), 0 12px);
+    backdrop-filter: blur(4px); position: relative;
   }
-  .loading-progress-bar {
-    position: relative;
-    width: 100%;
-    height: 2px;
-    background: rgba(232, 17, 35, 0.15);
-    overflow: visible;
+  .panel-cut::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, transparent 40%); }
+
+  .welcome-banner {
+    display: flex; justify-content: space-between; align-items: center; padding: 24px 30px; border-radius: 4px;
+    background: linear-gradient(90deg, rgba(232, 17, 35, 0.1) 0%, transparent 100%); border-left: 4px solid var(--accent);
+    border-top: 1px solid rgba(255,255,255,0.05); border-bottom: 1px solid rgba(255,255,255,0.05);
   }
-  .loading-progress-bar::before,
-  .loading-progress-bar::after {
-    content: "✦";
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    color: var(--accent-deep);
-    font-size: 8px;
-    opacity: 0.6;
+  .welcome-text h1 { font-family: var(--font-display); font-size: 28px; letter-spacing: 2px; color: #fff; margin-bottom: 8px; }
+  .welcome-text p { font-size: 13px; color: var(--fg-dim); letter-spacing: 1px; }
+  .status-ring { position: relative; width: 70px; height: 70px; }
+  .status-ring svg { transform: rotate(-90deg); width: 100%; height: 100%; }
+  .status-ring circle { fill: none; stroke-width: 6; }
+  .status-ring .bg { stroke: rgba(232,17,35,0.15); }
+  .status-ring .progress { stroke: url(#gradient); stroke-linecap: round; stroke-dasharray: 188; stroke-dashoffset: 188; transition: stroke-dashoffset 1s ease; }
+  .status-ring-text { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .status-ring-text .num { font-family: monospace; font-size: 16px; font-weight: bold; color: var(--accent-bright); }
+  .status-ring-text .label { font-size: 9px; color: var(--fg-mute); margin-top: -2px; }
+
+  .card-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+  .data-card { padding: 20px; display: flex; flex-direction: column; gap: 12px; border-top: 2px solid var(--accent-deep); }
+  .card-header { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--fg-dim); }
+  .card-icon { color: var(--accent); opacity: 0.8; width: 18px; height: 18px; }
+  .card-value { font-size: 32px; font-weight: 700; font-family: var(--font-en); line-height: 1; color: #fff; }
+  .card-desc { font-size: 11px; color: var(--fg-mute); }
+  .card-desc.alert { color: var(--accent-bright); }
+
+  .bottom-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; flex: 1; min-height: 300px; }
+  .timeline-panel { padding: 24px; display: flex; flex-direction: column; }
+  .panel-title { font-family: var(--font-display); font-size: 18px; letter-spacing: 2px; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line-soft); padding-bottom: 10px; }
+  .panel-title::before { content: "■"; font-size: 10px; color: var(--accent); }
+  .timeline { position: relative; padding-left: 12px; flex: 1; overflow-y: auto; }
+  .timeline::before { content: ""; position: absolute; left: 0; top: 4px; bottom: 0; width: 1px; background: var(--line-soft); }
+  .tl-item { position: relative; margin-bottom: 20px; padding-left: 16px; }
+  .tl-item::before { content: ""; position: absolute; left: -3px; top: 4px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  .tl-time { font-size: 11px; color: var(--fg-mute); font-family: monospace; margin-bottom: 4px; }
+  .tl-content { font-size: 13px; color: var(--fg-dim); line-height: 1.5; }
+  .tl-content strong { color: #fff; font-weight: normal; }
+  .action-panel { padding: 24px; display: flex; flex-direction: column; }
+  .action-list { display: flex; flex-direction: column; gap: 12px; flex: 1; justify-content: center; }
+  .action-btn {
+    background: rgba(232,17,35,0.05); border: 1px solid var(--line-soft); color: var(--fg);
+    padding: 16px; text-align: left; font-size: 14px; letter-spacing: 1px; cursor: pointer;
+    display: flex; justify-content: space-between; align-items: center; transition: all 0.2s;
   }
+  .action-btn:hover { background: rgba(232,17,35,0.15); border-color: var(--accent); }
+  .action-btn span { font-size: 10px; color: var(--fg-mute); }
+  .action-btn:hover span { color: var(--accent-bright); }
+
+  /* =========================================================
+   *  地图页面专用样式
+   * ========================================================= */
+  .map-layout { display: flex; flex: 1; width: 100%; gap: 20px; height: calc(100vh - var(--topbar-h) - 48px); }
+  .map-area { flex: 1; position: relative; overflow: hidden; background: #050505; border: 1px solid var(--line-soft); border-radius: 4px; }
+  .map-wrapper { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; cursor: grab; }
+  .map-wrapper:active { cursor: grabbing; }
+  .map-image { max-width: 100%; max-height: 100%; object-fit: contain; filter: invert(0.9) hue-rotate(180deg) grayscale(0.7) brightness(0.6) contrast(1.2); transition: opacity 0.3s; }
+  
+  .marker { position: absolute; transform: translate(-50%, -50%); cursor: pointer; z-index: 10; display: flex; flex-direction: column; align-items: center; }
+  .marker-icon { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 10px currentColor; background-color: currentColor; }
+  .marker-label { margin-top: 6px; font-size: 12px; color: #fff; background: rgba(0,0,0,0.8); padding: 2px 6px; border-radius: 2px; white-space: nowrap; border: 1px solid var(--line-soft); opacity: 0; transform: translateY(-5px); transition: all 0.2s; pointer-events: none; }
+  .marker:hover .marker-label { opacity: 1; transform: translateY(0); }
+  .marker.anomaly::before { content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 30px; height: 30px; border-radius: 50%; border: 2px solid currentColor; opacity: 0; animation: pulse 2s infinite; }
+  @keyframes pulse { 0% { transform: translateX(-50%) scale(0.5); opacity: 1; } 100% { transform: translateX(-50%) scale(2.5); opacity: 0; } }
+
+  .map-controls { position: absolute; bottom: 24px; left: 24px; display: flex; gap: 8px; }
+  .ctrl-btn { width: 40px; height: 40px; background: rgba(10,2,2,0.8); border: 1px solid var(--line-soft); color: #fff; font-size: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; border-radius: 4px; backdrop-filter: blur(4px); user-select: none; }
+  .ctrl-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  .sidebar-right { width: 320px; background: var(--panel-bg); border: 1px solid var(--line-soft); border-radius: 4px; display: flex; flex-direction: column; backdrop-filter: blur(10px); }
+  .panel-header { padding: 20px; border-bottom: 1px solid var(--line-soft); }
+  .region-tabs { display: flex; gap: 10px; background: rgba(0,0,0,0.5); padding: 4px; border-radius: 4px; margin-top: 16px; }
+  .region-tab { flex: 1; padding: 8px 0; text-align: center; font-size: 13px; cursor: pointer; color: var(--fg-dim); transition: all 0.2s; border-radius: 2px; }
+  .region-tab.active { background: var(--accent); color: #fff; font-weight: bold; }
+  .panel-body { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+  
+  .anomaly-card { padding: 16px; border: 1px solid var(--line-soft); background: rgba(0,0,0,0.4); border-left: 4px solid var(--diff-c); cursor: pointer; transition: all 0.2s; }
+  .anomaly-card:hover { background: rgba(232,17,35,0.1); border-color: var(--accent); }
+  .anomaly-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .anomaly-name { font-weight: bold; color: #fff; font-size: 14px; }
+  .anomaly-diff { font-size: 11px; padding: 2px 6px; border-radius: 2px; font-family: monospace; font-weight: bold; }
+  .diff-D { color: var(--diff-d); border: 1px solid var(--diff-d); background: rgba(76,175,80,0.1); }
+  .diff-C { color: var(--diff-c); border: 1px solid var(--diff-c); background: rgba(33,150,243,0.1); }
+  .diff-B { color: var(--diff-b); border: 1px solid var(--diff-b); background: rgba(156,39,176,0.1); }
+  .diff-A { color: var(--diff-a); border: 1px solid var(--diff-a); background: rgba(255,152,0,0.1); }
+  .diff-S { color: var(--diff-s); border: 1px solid var(--diff-s); background: rgba(232,17,35,0.15); box-shadow: 0 0 10px rgba(232,17,35,0.3); }
+  .anomaly-desc { font-size: 12px; color: var(--fg-dim); line-height: 1.4; }
+  .anomaly-reward { margin-top: 8px; font-size: 11px; color: var(--accent-bright); font-family: monospace; }
+
+  /* 加载页 */
+  .loading-screen { position: fixed; inset: 0; background: #000; z-index: 9999; display: flex; align-items: center; justify-content: center; opacity: 1; transition: opacity 0.6s ease; overflow: hidden; }
+  .loading-screen.fade-out { opacity: 0; pointer-events: none; }
+  .loading-star-bg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 120vw; height: auto; opacity: 0.05; pointer-events: none; mix-blend-mode: screen; }
+  .loading-content { position: relative; display: flex; flex-direction: column; align-items: center; gap: 22px; z-index: 2; }
+  .moon-ring { position: relative; width: 220px; height: 220px; }
+  .moon-ring-tower { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 130px; height: auto; filter: drop-shadow(0 0 12px rgba(232, 17, 35, 0.8)) drop-shadow(0 0 25px rgba(232, 17, 35, 0.4)); animation: emblemPulse 3s infinite alternate ease-in-out; z-index: 2; }
+  .moon-phase { position: absolute; width: 12px; height: 12px; transform: translate(-50%, -50%); border-radius: 50%; background: #141414; overflow: hidden; opacity: 0.3; transition: opacity 0.15s linear; }
+  .moon-phase::after { content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 100%; border-radius: 50%; background: linear-gradient(135deg, #f5f5f5 0%, #c0c0c0 50%, #808080 100%); transform: translateX(var(--moon-offset, 12px)); }
+  .loading-progress-wrap { width: 240px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .loading-progress-bar { position: relative; width: 100%; height: 2px; background: rgba(232, 17, 35, 0.15); overflow: visible; }
+  .loading-progress-bar::before, .loading-progress-bar::after { content: "✦"; position: absolute; top: 50%; transform: translateY(-50%); color: var(--accent-deep); font-size: 8px; opacity: 0.6; }
   .loading-progress-bar::before { left: -14px; }
-  .loading-progress-bar::after  { right: -14px; }
-  
-  .loading-progress-fill {
-    height: 100%;
-    width: 0%;
-    background: linear-gradient(90deg, #8a0a14, #ff4444, #ffffff);
-    box-shadow: 0 0 8px rgba(232, 17, 35, 0.8);
-    transition: width 0.1s linear;
-  }
-  .loading-progress-text {
-    font-family: "Courier New", "JetBrains Mono", monospace;
-    font-size: 20px;
-    font-weight: 700;
-    color: var(--accent-bright);
-    letter-spacing: 2px;
-    text-shadow: 0 0 10px rgba(232, 17, 35, 0.8);
-    line-height: 1;
-  }
+  .loading-progress-bar::after { right: -14px; }
+  .loading-progress-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #8a0a14, #ff4444, #ffffff); box-shadow: 0 0 8px rgba(232, 17, 35, 0.8); transition: width 0.1s linear; }
+  .loading-progress-text { font-family: "Courier New", "JetBrains Mono", monospace; font-size: 20px; font-weight: 700; color: var(--accent-bright); letter-spacing: 2px; text-shadow: 0 0 10px rgba(232, 17, 35, 0.8); line-height: 1; }
+  .loading-status { text-align: center; min-height: 40px; }
+  .loading-status-main { font-family: var(--font-ui); font-size: 14px; letter-spacing: 3px; color: var(--fg); transition: opacity 0.25s ease; }
+  .loading-status-main.egg { color: var(--accent-bright); font-family: var(--font-display); font-size: 15px; letter-spacing: 2px; text-shadow: 0 0 12px rgba(232, 17, 35, 0.9); }
+  .loading-status-sub { margin-top: 6px; font-family: var(--font-en); font-size: 10px; letter-spacing: 4px; color: var(--fg-mute); text-transform: uppercase; transition: opacity 0.25s ease; }
 
-  /* 加载文案 */
-  .loading-status {
-    text-align: center;
-    min-height: 40px;
-  }
-  .loading-status-main {
-    font-family: var(--font-ui);
-    font-size: 14px;
-    letter-spacing: 3px;
-    color: var(--fg);
-    transition: opacity 0.25s ease;
-  }
-  .loading-status-main.egg {
-    color: var(--accent-bright);
-    font-family: var(--font-display);
-    font-size: 15px;
-    letter-spacing: 2px;
-    text-shadow: 0 0 12px rgba(232, 17, 35, 0.9);
-  }
-  .loading-status-sub {
-    margin-top: 6px;
-    font-family: var(--font-en);
-    font-size: 10px;
-    letter-spacing: 4px;
-    color: var(--fg-mute);
-    text-transform: uppercase;
-    transition: opacity 0.25s ease;
-  }
+  /* 占位页 */
+  .placeholder-page { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 400px; gap: 24px; animation: fadeIn 0.4s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  .placeholder-icon { width: 80px; height: 80px; fill: var(--accent); opacity: 0.8; filter: drop-shadow(0 0 20px rgba(232,17,35,0.5)); animation: iconPulse 3s infinite alternate; }
+  @keyframes iconPulse { 0% { filter: drop-shadow(0 0 10px rgba(232,17,35,0.3)); } 100% { filter: drop-shadow(0 0 30px rgba(232,17,35,0.8)); } }
+  .placeholder-title { font-family: var(--font-display); font-size: 32px; letter-spacing: 4px; color: #fff; }
+  .placeholder-sub { font-family: var(--font-en); font-size: 14px; letter-spacing: 6px; color: var(--accent-deep); text-transform: uppercase; }
+  .placeholder-desc { font-size: 13px; color: var(--fg-mute); letter-spacing: 2px; margin-top: 10px; }
 
   /* 滚动条 */
-  #app::-webkit-scrollbar { width: 8px; }
-  #app::-webkit-scrollbar-track { background: #000; }
-  #app::-webkit-scrollbar-thumb { background: var(--accent-deep); }
+  #app::-webkit-scrollbar, .menu-list::-webkit-scrollbar, .content-container::-webkit-scrollbar, .panel-body::-webkit-scrollbar { width: 6px; }
+  #app::-webkit-scrollbar-track, .menu-list::-webkit-scrollbar-track, .content-container::-webkit-scrollbar-track, .panel-body::-webkit-scrollbar-track { background: #000; }
+  #app::-webkit-scrollbar-thumb, .menu-list::-webkit-scrollbar-thumb, .content-container::-webkit-scrollbar-thumb, .panel-body::-webkit-scrollbar-thumb { background: var(--accent-deep); }
 
-  /* 小屏适配 */
-  @media (max-width: 420px) {
-    .title-main { 
-      font-size: clamp(32px, 10vw, 48px); 
-      letter-spacing: clamp(2px, 1vw, 4px); 
-    }
-    .panel { padding: 22px 18px 18px; }
-    .moon-ring { width: 200px; height: 200px; }
-    .moon-ring-tower { width: 115px; }
-    .loading-progress-wrap { width: 200px; }
+  /* 响应式 */
+  @media (max-width: 1024px) {
+    .card-grid { grid-template-columns: repeat(2, 1fr); }
+    .bottom-grid { grid-template-columns: 1fr; }
+    .map-layout { flex-direction: column; }
+    .sidebar-right { width: 100%; height: 300px; }
+  }
+  @media (max-width: 768px) {
+    .sidebar { position: fixed; top: 0; left: 0; transform: translateX(-100%); }
+    .sidebar.open { transform: translateX(0); }
+    .sidebar-close-btn { display: block; }
+    .mobile-menu-btn { display: block; }
+    .topbar-title { display: none; }
+    .welcome-banner { flex-direction: column; text-align: center; gap: 20px; }
+    .card-grid { grid-template-columns: 1fr; }
   }
   [hidden] { display: none !important; }
+  .svg-defs { height: 0; width: 0; position: absolute; }
 </style>
 </head>
 <body>
-  <!-- 保持干净的空壳，完全交由 JS 动态生成 -->
-  <div id="app"></div>
-  <div class="version">— v.1.0.0 · 神降计划·塔 隐秘组织管理系统 —</div>
+
+<!-- 全局 SVG 渐变 -->
+<svg class="svg-defs">
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#8a0a14" />
+      <stop offset="100%" stop-color="#ff4444" />
+    </linearGradient>
+  </defs>
+</svg>
+
+<div id="app"></div>
 
 <script>
 (function () {
@@ -498,9 +425,19 @@
   const app = document.getElementById("app");
 
   /* =========================================================
-   *  1. 路由与状态
+   *  1. 核心状态与路由配置
    * ========================================================= */
-  const routes = { "/login": renderLogin, "/register": renderRegister, "/forgot-password": renderForgotPassword, "/app": renderApp };
+  const SESSION_KEY = "sdj_session";
+  const ADMIN_INVITE_CODE = "TOWER_ADMIN_2026"; // 内部管理员邀请码
+  
+  // 路由映射
+  const routes = {
+    "/login": renderLogin,
+    "/register": renderRegister,
+    "/forgot-password": renderForgotPassword,
+    "/app": renderMainApp
+  };
+
   function getPath() { return location.hash.replace(/^#/, "") || "/login"; }
   function navigate(path) { location.hash !== "#" + path ? location.hash = path : render(); }
   function render() {
@@ -511,7 +448,6 @@
   }
   window.addEventListener("hashchange", render);
 
-  const SESSION_KEY = "sdj_session";
   const getSession = () => { try { return JSON.parse(localStorage.getItem(SESSION_KEY)) || null; } catch (e) { return null; } };
   const setSession = (s) => localStorage.setItem(SESSION_KEY, JSON.stringify(s));
   const clearSession = () => localStorage.removeItem(SESSION_KEY);
@@ -542,11 +478,31 @@
     return node;
   }
 
-  function iconPerson() { return el("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "1.6", "stroke-linecap": "round", "stroke-linejoin": "round" }, el("circle", { cx: "12", cy: "8", r: "4" }), el("path", { d: "M4 20c0-4 4-6 8-6s8 2 8 6" })); }
-  function iconLock() { return el("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "1.6", "stroke-linecap": "round", "stroke-linejoin": "round" }, el("rect", { x: "5", y: "11", width: "14", height: "9", rx: "1.5" }), el("path", { d: "M8 11V7a4 4 0 0 1 8 0v4" })); }
-  function iconMail() { return el("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "1.6", "stroke-linecap": "round", "stroke-linejoin": "round" }, el("rect", { x: "3", y: "5", width: "18", height: "14", rx: "1.5" }), el("path", { d: "M3 7l9 6 9-6" })); }
-  function iconCheck() { return el("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "3", "stroke-linecap": "round", "stroke-linejoin": "round" }, el("path", { d: "M4 12l5 5L20 6" })); }
-  function iconKey() { return el("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "1.6", "stroke-linecap": "round", "stroke-linejoin": "round" }, el("circle", { cx: "7", cy: "14", r: "4" }), el("path", { d: "M10 12l10-7M16 8l3 3M14 10l2 2" })); }
+  // 图标库
+  const icons = {
+    person: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/></svg>`,
+    lock: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>`,
+    mail: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="1.5"/><path d="M3 7l9 6 9-6"/></svg>`,
+    check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg>`,
+    key: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="14" r="4"/><path d="M10 12l10-7M16 8l3 3M14 10l2 2"/></svg>`,
+    dashboard: `<svg viewBox="0 0 24 24"><path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 0h8v8h-8v-8z"/></svg>`,
+    map: `<svg viewBox="0 0 24 24"><path d="M20.5 3l-.16.03L15 5.1 9 3 3.36 4.9c-.21.07-.36.25-.36.48V20.5c0 .28.22.5.5.5l.16-.03L9 18.9l6 2.1 5.64-1.9c.21-.07.36-.25.36-.48V3.5c0-.28-.22-.5-.5-.5zM15 19l-6-2.11V5l6 2.11V19z"/></svg>`,
+    bag: `<svg viewBox="0 0 24 24"><path d="M19 6h-2c0-2.76-2.24-5-5-5S7 3.24 7 6H5c-1.1 0-1.99.9-1.99 2L3 20c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-7-3c1.66 0 3 1.34 3 3H9c0-1.66 1.34-3 3-3zm0 10c-2.76 0-5-2.24-5-5h2c0 1.66 1.34 3 3 3s3-1.34 3-3h2c0 2.76-2.24 5-5 5z"/></svg>`,
+    mission: `<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm4 18H6V4h7v5h5v11z"/></svg>`,
+    forum: `<svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>`,
+    friend: `<svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>`,
+    council: `<svg viewBox="0 0 24 24"><path d="M12 2l-5.5 9h11L12 2zm0 3.84L14.61 9H9.39L12 5.84zm-5 8.16c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm10 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-5 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zM2 20h20v2H2v-2z"/></svg>`,
+    codex: `<svg viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9h-4v4h-2v-4H9V9h4V5h2v4h4v2z"/></svg>`,
+    member: `<svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>`,
+    settings: `<svg viewBox="0 0 24 24"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.06-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.73,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.06,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.49-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></svg>`
+  };
+
+  function getSvg(pathStr, cls="") { return `<svg class="${cls}" viewBox="0 0 24 24" fill="currentColor">${pathStr}</svg>`; }
+  function iconPerson() { return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/></svg>`; }
+  function iconLock() { return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>`; }
+  function iconMail() { return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="1.5"/><path d="M3 7l9 6 9-6"/></svg>`; }
+  function iconCheck() { return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg>`; }
+  function iconKey() { return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="14" r="4"/><path d="M10 12l10-7M16 8l3 3M14 10l2 2"/></svg>`; }
 
   function emblem() { return el("img", { class: "emblem", src: "assets/tower.png", alt: "神降之塔" }); }
   function titleBlock() { 
@@ -558,116 +514,57 @@
   function pageWrap(children) { 
     return el("div", { class: "page" }, 
       el("img", { class: "starburst-bg", src: "assets/star.png", alt: "starburst" }), 
-      emblem(), 
-      titleBlock(), 
-      ...children
+      emblem(), titleBlock(), ...children
     ); 
   }
 
-  function segBtn(label, role, onClick) { return el("button", { class: "seg-btn", "data-role": role, "@click": onClick }, label); }
-  
   function fieldWrap(labelText, iconSvgNode, opts) {
     const input = el("input", { class: "field-input", type: opts.type || "text", placeholder: opts.placeholder || "", value: opts.value || "", autocomplete: "off" });
     input.addEventListener("input", () => opts.onInput && opts.onInput(input.value));
     return el("div", { class: "field" },
       el("label", { class: "field-label" }, labelText),
-      el("div", { class: "field-input-wrap" }, el("div", { class: "field-icon" }, iconSvgNode), input),
+      el("div", { class: "field-input-wrap" }, el("div", { class: "field-icon", innerHTML: iconSvgNode }), input),
       el("div", { class: "field-error" }, opts.errorText || "")
     );
-  }
-
-  function checkboxEl(label, onChange) {
-    const cb = el("input", { type: "checkbox" });
-    cb.addEventListener("change", () => onChange(cb.checked));
-    const box = el("span", { class: "box" }, iconCheck());
-    cb.style.display = "none";
-    const labelEl = el("label", { class: "checkbox" }, cb, box, el("span", {}, label));
-    labelEl.addEventListener("click", e => {
-      if (e.target === cb) return;
-      e.preventDefault();
-      cb.checked = !cb.checked;
-      onChange(cb.checked);
-    });
-    return labelEl;
   }
 
   /* =========================================================
    *  3. 加载页 Loading Screen
    * ========================================================= */
-  /**
-   * 显示加载页
-   * @param {Object} options
-   * @param {Function} options.onComplete - 加载完成后的回调
-   * @param {number} [options.duration=3500] - 加载总时长（毫秒）
-   * @param {string} [options.eggText] - 完成后展示的彩蛋文案
-   */
   function showLoadingScreen(options) {
     options = options || {};
-    const duration = options.duration || 3500;
+    const duration = options.duration || 3000;
     const eggText = options.eggText || getDefaultEggText();
     const onComplete = options.onComplete || function () {};
 
-    // 防止穿透滚动
     document.body.style.overflow = "hidden";
-
-    // 构建加载页 DOM
     const screen = el("div", { class: "loading-screen" });
-    
-    // 极淡的十字芒星
     const starBg = el("img", { class: "loading-star-bg", src: "assets/star.png", alt: "" });
-    
-    // 月相环容器
     const moonRing = el("div", { class: "moon-ring" });
     
-    // 生成 24 个月相（半径 88px，容器 220px，圆心 110,110）
-    const PHASE_COUNT = 24;
-    const CENTER = 110;
-    const RADIUS = 88;
+    const PHASE_COUNT = 24, CENTER = 110, RADIUS = 88;
     const phaseEls = [];
     for (let i = 0; i < PHASE_COUNT; i++) {
-      const angle = (i / PHASE_COUNT) * 2 * Math.PI - Math.PI / 2; // 从顶部开始
-      const cx = CENTER + RADIUS * Math.cos(angle);
-      const cy = CENTER + RADIUS * Math.sin(angle);
-      
-      // 相位值：从 0（新月）→ 1（满月）→ 0（新月）
-      // 用 cos 计算：i=0 时 phase=0；i=12 时 phase=1；i=24 时 phase=0
+      const angle = (i / PHASE_COUNT) * 2 * Math.PI - Math.PI / 2;
+      const cx = CENTER + RADIUS * Math.cos(angle), cy = CENTER + RADIUS * Math.sin(angle);
       const phase = (1 - Math.cos((i / PHASE_COUNT) * 2 * Math.PI)) / 2;
-      
-      // 亮色圆的偏移：phase=0 → 12px（完全移出）；phase=1 → 0px（完全覆盖）
       const offset = (1 - phase) * 12;
-      
-      const phaseEl = el("div", {
-        class: "moon-phase",
-        style: `left: ${cx}px; top: ${cy}px; --moon-offset: ${offset}px;`
-      });
-      phaseEls.push(phaseEl);
-      moonRing.appendChild(phaseEl);
+      const phaseEl = el("div", { class: "moon-phase", style: `left: ${cx}px; top: ${cy}px; --moon-offset: ${offset}px;` });
+      phaseEls.push(phaseEl); moonRing.appendChild(phaseEl);
     }
     
-    // 中央塔徽章
-    const towerEl = el("img", { class: "moon-ring-tower", src: "assets/tower.png", alt: "神降之塔" });
-    moonRing.appendChild(towerEl);
-
-    // 进度条
+    moonRing.appendChild(el("img", { class: "moon-ring-tower", src: "assets/tower.png", alt: "塔" }));
     const progressFill = el("div", { class: "loading-progress-fill" });
     const progressText = el("div", { class: "loading-progress-text" }, "0%");
-    const progressWrap = el("div", { class: "loading-progress-wrap" },
-      el("div", { class: "loading-progress-bar" }, progressFill),
-      progressText
-    );
-
-    // 文案
+    const progressWrap = el("div", { class: "loading-progress-wrap" }, el("div", { class: "loading-progress-bar" }, progressFill), progressText);
     const statusMain = el("div", { class: "loading-status-main" }, "正在建立连接…");
     const statusSub = el("div", { class: "loading-status-sub" }, "ESTABLISHING LINK");
     const statusWrap = el("div", { class: "loading-status" }, statusMain, statusSub);
 
-    // 组装
-    const content = el("div", { class: "loading-content" }, moonRing, progressWrap, statusWrap);
     screen.appendChild(starBg);
-    screen.appendChild(content);
+    screen.appendChild(el("div", { class: "loading-content" }, moonRing, progressWrap, statusWrap));
     document.body.appendChild(screen);
 
-    // 阶段文案
     const phases = [
       { start: 0.00, end: 0.30, main: "正在建立连接…", sub: "ESTABLISHING LINK" },
       { start: 0.30, end: 0.65, main: "正在验证密钥…", sub: "VERIFYING CREDENTIALS" },
@@ -675,70 +572,45 @@
       { start: 0.90, end: 1.00, main: "系统就绪", sub: "SYSTEM READY" }
     ];
 
-    // 缓动函数：先快后慢
-    function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
-
-    // 更新月相环的点亮
-    function updateMoonRing(elapsed) {
-      const cycle = 3500;
-      const t = (elapsed % cycle) / cycle; // 0-1
-      phaseEls.forEach((el, i) => {
-        const position = i / PHASE_COUNT;
-        // 环形距离
-        let dist = Math.abs(position - t);
-        if (dist > 0.5) dist = 1 - dist;
-        // 亮度：距离越近越亮（光斑宽度由 8 控制）
-        const brightness = Math.max(0, 1 - dist * 8);
-        el.style.opacity = 0.3 + brightness * 0.7;
-      });
-    }
-
-    // 动画主循环
+    const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
     const startTime = performance.now();
-    let eggShown = false;
-    let currentMain = statusMain.textContent;
+    let eggShown = false, currentMain = statusMain.textContent;
 
     function tick(now) {
       const elapsed = now - startTime;
       const t = Math.min(elapsed / duration, 1);
       const progress = easeOutCubic(t);
 
-      // 更新进度条与百分比
       progressFill.style.width = `${progress * 100}%`;
       progressText.textContent = `${Math.round(progress * 100)}%`;
 
-      // 更新月相环
-      updateMoonRing(elapsed);
+      const cycle = 3500, ct = (elapsed % cycle) / cycle;
+      phaseEls.forEach((el, i) => {
+        let dist = Math.abs((i / PHASE_COUNT) - ct);
+        if (dist > 0.5) dist = 1 - dist;
+        const brightness = Math.max(0, 1 - dist * 8);
+        el.style.opacity = 0.3 + brightness * 0.7;
+      });
 
-      // 更新文案
       if (t < 1) {
         for (const p of phases) {
           if (t >= p.start && t < p.end) {
             if (currentMain !== p.main) {
-              currentMain = p.main;
-              statusMain.textContent = p.main;
-              statusMain.classList.remove("egg");
-              statusSub.textContent = p.sub;
-              statusSub.style.opacity = 1;
+              currentMain = p.main; statusMain.textContent = p.main; statusMain.classList.remove("egg");
+              statusSub.textContent = p.sub; statusSub.style.opacity = 1;
             }
             break;
           }
         }
       }
 
-      // 触发彩蛋
       if (t >= 1 && !eggShown) {
-        eggShown = true;
-        statusMain.textContent = eggText;
-        statusMain.classList.add("egg");
-        statusSub.textContent = "";
-        statusSub.style.opacity = 0;
+        eggShown = true; statusMain.textContent = eggText; statusMain.classList.add("egg");
+        statusSub.textContent = ""; statusSub.style.opacity = 0;
       }
 
-      if (t < 1) {
-        requestAnimationFrame(tick);
-      } else {
-        // 彩蛋展示 800ms 后淡出
+      if (t < 1) requestAnimationFrame(tick);
+      else {
         setTimeout(() => {
           screen.classList.add("fade-out");
           setTimeout(() => {
@@ -749,11 +621,9 @@
         }, 800);
       }
     }
-
     requestAnimationFrame(tick);
   }
 
-  // 根据当前会话决定默认彩蛋文案
   function getDefaultEggText() {
     const s = getSession();
     if (!s) return "欢迎来到神降计划。";
@@ -762,7 +632,7 @@
   }
 
   /* =========================================================
-   *  4. 登录页 /login
+   *  4. 登录与注册
    * ========================================================= */
   function renderLogin(root) {
     let role = "player", name = "", pwd = "", auto = false;
@@ -770,37 +640,38 @@
     const page = el("div", { class: "panel" },
       el("div", { class: "panel-inner" },
         el("div", { class: "segmented" },
-          el("div", { class: "seg-slider" }),
-          segBtn("玩家 / 契约者", "player", () => switchRole("player")),
-          segBtn("管理者", "admin", () => switchRole("admin"))
+          el("div", { class: "seg-slider", style: "width: 0; transform: translateX(0);" }),
+          el("button", { class: "seg-btn active", "data-role": "player" }, "玩家 / 契约者"),
+          el("button", { class: "seg-btn", "data-role": "admin" }, "管理者")
         ),
         el("div", { class: "banner", hidden: true }),
         fieldWrap("姓名", iconPerson(), { placeholder: "请输入姓名", value: name, onInput: v => { name = v; } }),
         fieldWrap("密码", iconLock(), { type: "password", placeholder: "请输入密码", value: pwd, onInput: v => { pwd = v; } }),
         el("div", { class: "form-aux" },
-          checkboxEl("自动登录", checked => { auto = checked; }),
+          el("label", { class: "checkbox" }, 
+            el("input", { type: "checkbox", "@change": e => auto = e.target.checked }), 
+            el("span", { class: "box", innerHTML: iconCheck() }), 
+            el("span", {}, "自动登录")
+          ),
           el("a", { class: "link", href: "#/forgot-password", textContent: "忘记密码？" })
         ),
         el("button", { class: "btn-primary", "@click": submit }, "载入"),
         el("div", { class: "panel-footer" },
-          "是否注册", el("a", { class: "link", href: "#/register", style: "margin: 0 4px;", id: "reg-link" }, role === "player" ? "玩家/契约者" : "管理者"), "?"
+          "是否注册", el("a", { class: "link", href: "#/register", style: "margin: 0 4px;", id: "reg-link" }, "玩家/契约者"), "?"
         )
       )
     );
 
-    function refreshRoleUI() {
-      const segs = page.querySelectorAll(".seg-btn");
-      const slider = page.querySelector(".seg-slider");
-      if (!segs.length || !slider) return;
+    const segBtns = page.querySelectorAll(".seg-btn");
+    const slider = page.querySelector(".seg-slider");
 
-      segs.forEach(s => s.classList.toggle("active", s.dataset.role === role));
-      
-      const activeSeg = Array.from(segs).find(s => s.dataset.role === role);
-      if (activeSeg) {
+    function refreshRoleUI() {
+      segBtns.forEach(s => s.classList.toggle("active", s.dataset.role === role));
+      const activeSeg = Array.from(segBtns).find(s => s.dataset.role === role);
+      if (activeSeg && slider) {
         slider.style.width = `${activeSeg.offsetWidth}px`;
         slider.style.transform = `translateX(${activeSeg.offsetLeft}px)`;
       }
-      
       const regLink = page.querySelector("#reg-link");
       if (regLink) regLink.textContent = role === "player" ? "玩家/契约者" : "管理者";
       const nameLabel = page.querySelectorAll(".field-label")[0];
@@ -809,7 +680,7 @@
       if (inputs[0]) inputs[0].placeholder = role === "player" ? "请输入姓名" : "请输入管理员 ID";
     }
 
-    function switchRole(r) { role = r; refreshRoleUI(); }
+    segBtns.forEach(btn => btn.addEventListener("click", () => { role = btn.dataset.role; refreshRoleUI(); }));
 
     function submit() {
       const banner = page.querySelector(".banner");
@@ -817,87 +688,128 @@
         banner.hidden = false; banner.className = "banner"; banner.textContent = "姓名与密码不能为空。"; return;
       }
       banner.hidden = true;
-      setSession({ role, name: name.trim(), ts: Date.now(), auto });
+      setSession({ role, displayName: name.trim(), ts: Date.now(), auto });
       
-      // 登录成功后显示加载页
-      showLoadingScreen({
-        onComplete: () => navigate("/app")
-      });
+      // 登录后，如果是管理员，默认进入管理者视图；如果是玩家/契约者，系统会根据选择自动分配
+      showLoadingScreen({ onComplete: () => navigate("/app") });
     }
 
     function onResize() { refreshRoleUI(); }
     window.addEventListener("resize", onResize);
-    function cleanup() {
-      window.removeEventListener("resize", onResize);
-      window.removeEventListener("hashchange", cleanup);
-    }
-    window.addEventListener("hashchange", cleanup);
+    window.addEventListener("hashchange", function cleanup() { window.removeEventListener("resize", onResize); window.removeEventListener("hashchange", cleanup); });
 
     root.appendChild(pageWrap([page]));
-    requestAnimationFrame(() => { refreshRoleUI(); });
-    if (document.fonts && document.fonts.ready) {
-      document.fonts.ready.then(() => refreshRoleUI());
-    }
+    requestAnimationFrame(refreshRoleUI);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(refreshRoleUI);
   }
 
-  /* =========================================================
-   *  5. 注册页 /register
-   * ========================================================= */
   function renderRegister(root) {
-    const form = { username: "", displayName: "", password: "", confirm: "" };
-    const errors = { username: "", displayName: "", password: "", confirm: "" };
+    let isAdminReg = false; // 是否处于管理员注册模式
+    let form = { username: "", displayName: "", password: "", confirm: "", inviteCode: "" };
+    let errors = { username: "", displayName: "", password: "", confirm: "", inviteCode: "" };
 
     const page = el("div", { class: "panel" },
       el("div", { class: "panel-inner" },
+        el("div", { class: "segmented" },
+          el("div", { class: "seg-slider", style: "width: 0;" }),
+          el("button", { class: "seg-btn active", "data-role": "normal" }, "普通注册"),
+          el("button", { class: "seg-btn", "data-role": "admin" }, "高级认证")
+        ),
         el("div", { class: "field" }, el("label", { class: "field-label" }, "用户名"), inputWithIcon("username", iconPerson(), "3-16 位字母数字下划线", val => { form.username = val; errors.username = validateUsername(val); refreshErrors(); }), errBox("username")),
-        el("div", { class: "field" }, el("label", { class: "field-label" }, "显示名"), inputWithIcon("displayName", iconPerson(), "1-20 位字符", val => { form.displayName = val; errors.displayName = val.length < 1 ? "显示名不能为空" : val.length > 20 ? "不超过 20 字符" : ""; refreshErrors(); }), errBox("displayName")),
+        el("div", { class: "field" }, el("label", { class: "field-label" }, "显示名"), inputWithIcon("displayName", iconPerson(), "1-20 位字符", val => { form.displayName = val; errors.displayName = val.length < 1 ? "不能为空" : ""; refreshErrors(); }), errBox("displayName")),
         el("div", { class: "field" }, el("label", { class: "field-label" }, "密码"), inputWithIcon("password", iconLock(), "至少 8 位，含字母与数字", val => { form.password = val; errors.password = validatePassword(val); if (form.confirm) errors.confirm = val !== form.confirm ? "两次密码不一致" : ""; refreshErrors(); }, "password"), errBox("password")),
         el("div", { class: "field" }, el("label", { class: "field-label" }, "确认密码"), inputWithIcon("confirm", iconLock(), "再次输入密码", val => { form.confirm = val; errors.confirm = val !== form.password ? "两次密码不一致" : ""; refreshErrors(); }, "password"), errBox("confirm")),
+        // 邀请码字段（默认隐藏）
+        el("div", { class: "field invite-field", hidden: true },
+          el("label", { class: "field-label" }, "内部邀请码"),
+          inputWithIcon("inviteCode", iconKey(), "请输入管理者邀请码", val => { form.inviteCode = val; errors.inviteCode = val === ADMIN_INVITE_CODE ? "" : "无效邀请码"; refreshErrors(); }),
+          errBox("inviteCode")
+        ),
         el("div", { class: "banner", hidden: true }),
         el("button", { class: "btn-primary", "@click": submitRegister }, "完成注册"),
         el("div", { class: "panel-footer" }, "已有身份？", el("a", { class: "link", href: "#/login", style: "margin-left:4px;" }, "返回登录"))
       )
     );
 
+    const segBtns = page.querySelectorAll(".seg-btn");
+    const slider = page.querySelector(".seg-slider");
+    const inviteField = page.querySelector(".invite-field");
+
+    function refreshModeUI() {
+      segBtns.forEach(s => s.classList.toggle("active", s.dataset.role === (isAdminReg ? "admin" : "normal")));
+      const activeSeg = Array.from(segBtns).find(s => s.dataset.role === (isAdminReg ? "admin" : "normal"));
+      if (activeSeg && slider) {
+        slider.style.width = `${activeSeg.offsetWidth}px`;
+        slider.style.transform = `translateX(${activeSeg.offsetLeft}px)`;
+      }
+      inviteField.hidden = !isAdminReg;
+    }
+
+    segBtns.forEach(btn => btn.addEventListener("click", () => {
+      isAdminReg = btn.dataset.role === "admin";
+      refreshModeUI();
+    }));
+
     function refreshErrors() {
-      page.querySelectorAll(".field").forEach((f, i) => {
+      page.querySelectorAll(".field").forEach((f) => {
         const errEl = f.querySelector(".field-error"); if (!errEl) return;
-        const keys = ["username", "displayName", "password", "confirm"];
-        errEl.textContent = errors[keys[i]] || "";
+        // 这里的 keys 必须对应 input 的顺序，由于动态显示/隐藏，直接遍历
+        const key = f.querySelector("input")?.classList[0] || ""; 
+        // 简单粗暴一点，直接用 data-key
+      });
+      // 由于使用简写，这里手动更新
+      const fields = page.querySelectorAll(".field");
+      const keys = ["username", "displayName", "password", "confirm", "inviteCode"];
+      fields.forEach((f, i) => {
+        if (f.hidden) return;
+        const errEl = f.querySelector(".field-error");
+        if (errEl) errEl.textContent = errors[keys[i]] || "";
       });
     }
 
     function submitRegister() {
       const banner = page.querySelector(".banner");
       errors.username = validateUsername(form.username);
-      errors.displayName = !form.displayName ? "显示名不能为空" : form.displayName.length > 20 ? "不超过 20 字符" : "";
+      errors.displayName = !form.displayName ? "显示名不能为空" : "";
       errors.password = validatePassword(form.password);
       errors.confirm = form.password !== form.confirm ? "两次密码不一致" : "";
+      if (isAdminReg) {
+        errors.inviteCode = form.inviteCode === ADMIN_INVITE_CODE ? "" : "邀请码错误";
+      } else {
+        errors.inviteCode = ""; // 普通注册忽略
+      }
       refreshErrors();
-      if (Object.values(errors).some(e => e)) { banner.hidden = false; banner.className = "banner"; banner.textContent = "请修正表单错误后再提交。"; return; }
-      setSession({ role: "player", name: form.displayName, username: form.username, ts: Date.now(), auto: false });
-      
-      // 注册成功后显示加载页
-      showLoadingScreen({
-        onComplete: () => navigate("/app")
+
+      if (Object.values(errors).some(e => e)) {
+        banner.hidden = false; banner.className = "banner"; banner.textContent = "请修正表单错误。"; return;
+      }
+
+      // 注册成功
+      setSession({ 
+        role: isAdminReg ? "admin" : "player", 
+        displayName: form.displayName, 
+        username: form.username, 
+        ts: Date.now(), auto: false 
       });
+      showLoadingScreen({ onComplete: () => navigate("/app") });
     }
 
     function inputWithIcon(key, iconNode, placeholder, onInput, type) {
       const input = el("input", { class: "field-input", type: type || "text", placeholder, autocomplete: "off" });
       input.addEventListener("input", () => onInput(input.value));
-      return el("div", { class: "field-input-wrap" }, el("div", { class: "field-icon" }, iconNode), input);
+      return el("div", { class: "field-input-wrap" }, el("div", { class: "field-icon", innerHTML: iconNode }), input);
     }
     function errBox(key) { return el("div", { class: "field-error", "data-key": key }); }
 
     root.appendChild(pageWrap([page]));
+    requestAnimationFrame(refreshModeUI);
   }
 
-  function validateUsername(v) { if (!v) return "用户名不能为空"; if (v.length < 3 || v.length > 16) return "长度 3-16"; if (!/^[A-Za-z0-9_]+$/.test(v)) return "仅允许字母数字下划线"; return ""; }
+  function validateUsername(v) { if (!v) return "不能为空"; if (v.length < 3 || v.length > 16) return "长度 3-16"; if (!/^[A-Za-z0-9_]+$/.test(v)) return "仅限字母数字"; return ""; }
   function validatePassword(v) { if (!v) return "密码不能为空"; if (v.length < 8) return "至少 8 位"; if (!/[A-Za-z]/.test(v) || !/[0-9]/.test(v)) return "须含字母与数字"; return ""; }
 
   /* =========================================================
-   *  6. 找回密码 /forgot-password
+   *  5. 找回密码
    * ========================================================= */
   function renderForgotPassword(root) {
     let step = 1, email = "", code = "", newPwd = "", confirmPwd = "";
@@ -922,14 +834,20 @@
     function renderStep() {
       const body = page.querySelector("#step-body"), btn = page.querySelector("#step-btn");
       body.innerHTML = "";
-      const oldStepper = page.querySelector(".stepper"); oldStepper.replaceWith(stepperEl());
+      page.querySelector(".stepper").replaceWith(stepperEl());
       page.querySelector(".banner").hidden = true;
 
-      if (step === 1) { body.appendChild(el("div", { class: "field" }, el("label", { class: "field-label" }, "邮箱"), el("div", { class: "field-input-wrap" }, el("div", { class: "field-icon" }, iconMail()), bindInput("email", "请输入注册邮箱", val => { email = val; })), el("div", { class: "field-error" }, ""))); btn.textContent = "发送重置链接"; }
-      else if (step === 2) { body.appendChild(el("div", { class: "field" }, el("label", { class: "field-label" }, "验证码"), el("div", { class: "field-input-wrap" }, el("div", { class: "field-icon" }, iconKey()), bindInput("code", "请输入邮件中的 6 位验证码", val => { code = val; })), el("div", { class: "field-error" }, ""))); btn.textContent = "验证身份"; }
+      if (step === 1) { 
+        body.appendChild(el("div", { class: "field" }, el("label", { class: "field-label" }, "邮箱"), el("div", { class: "field-input-wrap" }, el("div", { class: "field-icon", innerHTML: iconMail() }), bindInput("email", "请输入注册邮箱", val => { email = val; })), el("div", { class: "field-error" }))); 
+        btn.textContent = "发送重置链接"; 
+      }
+      else if (step === 2) { 
+        body.appendChild(el("div", { class: "field" }, el("label", { class: "field-label" }, "验证码"), el("div", { class: "field-input-wrap" }, el("div", { class: "field-icon", innerHTML: iconKey() }), bindInput("code", "请输入邮件中的 6 位验证码", val => { code = val; })), el("div", { class: "field-error" }))); 
+        btn.textContent = "验证身份"; 
+      }
       else { 
-        body.appendChild(el("div", { class: "field" }, el("label", { class: "field-label" }, "新密码"), el("div", { class: "field-input-wrap" }, el("div", { class: "field-icon" }, iconLock()), bindInput("newPwd", "至少 8 位，含字母与数字", val => { newPwd = val; }, "password")), el("div", { class: "field-error" }, "")));
-        body.appendChild(el("div", { class: "field" }, el("label", { class: "field-label" }, "确认新密码"), el("div", { class: "field-input-wrap" }, el("div", { class: "field-icon" }, iconLock()), bindInput("confirmPwd", "再次输入新密码", val => { confirmPwd = val; }, "password")), el("div", { class: "field-error" }, ""))); 
+        body.appendChild(el("div", { class: "field" }, el("label", { class: "field-label" }, "新密码"), el("div", { class: "field-input-wrap" }, el("div", { class: "field-icon", innerHTML: iconLock() }), bindInput("newPwd", "至少 8 位，含字母与数字", val => { newPwd = val; }, "password")), el("div", { class: "field-error" })));
+        body.appendChild(el("div", { class: "field" }, el("label", { class: "field-label" }, "确认新密码"), el("div", { class: "field-input-wrap" }, el("div", { class: "field-icon", innerHTML: iconLock() }), bindInput("confirmPwd", "再次输入新密码", val => { confirmPwd = val; }, "password")), el("div", { class: "field-error" }))); 
         btn.textContent = "完成重置"; 
       }
     }
@@ -956,18 +874,428 @@
   }
 
   /* =========================================================
-   *  7. 主界面占位 /app
+   *  6. 主应用框架 (/app)
    * ========================================================= */
-  function renderApp(root) {
-    const s = getSession();
-    if (!s) { navigate("/login"); return; }
-    root.appendChild(el("div", { class: "app-placeholder" },
-      emblem(),
-      el("h2", {}, "欢迎，" + s.name),
-      el("div", { class: "session-info" }, "身份：" + (s.role === "player" ? "玩家 / 契约者" : "管理者") + " · 登录时间：" + new Date(s.ts).toLocaleString("zh-CN")),
-      el("p", { style: "color: var(--fg-mute); font-size:13px; max-width:420px; text-align:center;" }, "主界面待后续规划。此页面仅为登录会话验证占位。"),
-      el("button", { class: "btn-primary", style: "width: 200px; margin-top: 18px;", "@click": () => { clearSession(); navigate("/login"); } }, "退出会话")
-    ));
+  
+  // 主应用状态
+  let viewRole = "player"; // 当前视角：player / contractor / admin
+  let currentMenuId = "dashboard"; // 当前菜单项
+  let panzoomInstance = null; // 地图实例
+
+  const menuConfig = {
+    player: [
+      { id: 'dashboard', cn: '主控台', en: 'DASHBOARD' },
+      { id: 'map', cn: '地图', en: 'MAP' },
+      { id: 'bag', cn: '背包', en: 'INVENTORY' },
+      { id: 'mission', cn: '委托任务', en: 'COMMISSIONS' },
+      { id: 'forum', cn: '论坛', en: 'FORUM' },
+      { id: 'friend', cn: '好友', en: 'FRIENDS' },
+      { id: 'council', cn: '议会', en: 'COUNCIL' },
+      { id: 'codex', cn: '收集图鉴', en: 'CODEX' },
+      { id: 'settings', cn: '设置', en: 'SETTINGS' }
+    ],
+    admin: [
+      { id: 'dashboard', cn: '主控台', en: 'DASHBOARD' },
+      { id: 'map', cn: '地图管理', en: 'MAP MGMT' },
+      { id: 'mission', cn: '任务管理', en: 'MISSION MGMT' },
+      { id: 'forum', cn: '论坛管理', en: 'FORUM MGMT' },
+      { id: 'friend', cn: '好友', en: 'FRIENDS' },
+      { id: 'council', cn: '议会管理', en: 'COUNCIL MGMT' },
+      { id: 'bag', cn: '背包管理', en: 'BAG MGMT' },
+      { id: 'member', cn: '神降系统成员管理', en: 'MEMBER MGMT' },
+      { id: 'settings', cn: '设置', en: 'SETTINGS' }
+    ]
+  };
+
+  // 模拟数据（根据当前视角变化）
+  const mockData = {
+    player: {
+      welcome: '玩家，[NAME]', sub: '今日 10月24日 · 探索未知的隐秘世界。', ring: 30,
+      card1Label: '已解锁谜题', card1Value: '12', card1Desc: '本周新增 2 个',
+      card2Label: '新手委托', card2Value: '3', card2Desc: '奖励已更新',
+      card3Label: '探索进度', card3Value: '30%', card3Desc: '黑森林区域',
+      card4Label: '收集线索', card4Value: '42', card4Desc: '残缺的照片',
+      timeline: [{ time: '10:20', text: '你在 <strong>旧城区废墟</strong> 发现了一封残破的信件' }, { time: '09:15', text: '完成了新手委托：<strong>寻找失踪的流浪猫</strong>' }],
+      actions: ['开始解谜', '查看线索板', '探索新区域', '加入玩家讨论']
+    },
+    contractor: {
+      welcome: '契约者，[NAME]', sub: '今日 10月24日 · 塔在等待您的指令。', ring: 78,
+      card1Label: '我的活跃任务', card1Value: '3', card1Desc: '2 项即将到期',
+      card2Label: '悬赏请求', card2Value: '5', card2Desc: '其中 2 项极度危险',
+      card3Label: '契约完成率', card3Value: '78%', card3Desc: '评级：优秀',
+      card4Label: '终端警告', card4Value: '1', card4Desc: '异常信号干扰',
+      timeline: [{ time: '18:32', text: '您完成了 <strong>C 级任务：清理异常回声</strong>' }, { time: '16:15', text: '收到来自 <strong>管理者「白鸦」</strong> 的加密通讯' }],
+      actions: ['接取契约', '提交任务报告', '联络情报员', '武器/装备维护']
+    },
+    admin: {
+      welcome: '管理者，[NAME]', sub: '今日 10月24日 · 隐秘系统运行正常。', ring: 99,
+      card1Label: '全组织活跃成员', card1Value: '128', card1Desc: '契约者 42 / 玩家 86',
+      card2Label: '待审批请求', card2Value: '7', card2Desc: '其中 3 项需紧急处理',
+      card3Label: '塔能核心负载', card3Value: '99%', card3Desc: '部分区域降频',
+      card4Label: '系统告警', card4Value: '2', card4Desc: '非法访问尝试',
+      timeline: [{ time: '18:32', text: '契约者「墨羽」完成了 <strong>C 级任务</strong>' }, { time: '17:15', text: '检测到 <strong>区域 K-7 异常波动</strong>，已派遣调查' }],
+      actions: ['发布全服广播', '处理异常警报', '成员权限管理', '系统核心维护']
+    }
+  };
+
+  // 地图数据
+  const mapData = {
+    A: { image: 'assets/map-a.jpg', anomalies: [
+        { id: 'a1', name: '守夜人酒吧', x: 18, y: 45, diff: 'D', desc: '不明窃听器信号', reward: '100 积分' },
+        { id: 'a2', name: '老城居民区', x: 22, y: 62, diff: 'C', desc: '游荡的低阶残影', reward: '300 积分' },
+        { id: 'a3', name: '紫金国际中心', x: 82, y: 30, diff: 'A', desc: '空间扭曲现象', reward: '2000 积分' },
+        { id: 'a4', name: '中心医院', x: 31, y: 53, diff: 'B', desc: '太平间异变', reward: '800 积分' },
+        { id: 'a5', name: '许愿池', x: 60, y: 83, diff: 'S', desc: '未确认图腾', reward: '？？？' }
+    ]},
+    B: { image: 'assets/map-b.jpg', anomalies: [
+        { id: 'b1', name: '圣神大教堂', x: 48, y: 31, diff: 'B', desc: '雕像流血事件', reward: '800 积分' },
+        { id: 'b2', name: '沉船废骨', x: 72, y: 67, diff: 'A', desc: '深海呓语扩散', reward: '2000 积分' },
+        { id: 'b3', name: '灰烬之地', x: 7, y: 87, diff: 'S', desc: '未知遗迹复苏', reward: '10000 积分' }
+    ]}
+  };
+
+  function renderMainApp(root) {
+    const session = getSession();
+    if (!session) { navigate("/login"); return; }
+
+    // 根据登录时的角色初始化视角
+    // 如果登录是 player，那么视角就是 player (内部区分 contract/player 后续通过左侧菜单或顶部切换，但按用户要求，这里默认玩家，契约者类似)
+    // 如果登录是 admin，默认视角是 admin
+    viewRole = session.role === "admin" ? "admin" : "player";
+    currentMenuId = "dashboard";
+
+    const appLayout = el("div", { class: "app-layout" },
+      // 遮罩
+      el("div", { class: "sidebar-overlay", id: "sidebarOverlay" }),
+      // 侧边栏
+      el("aside", { class: "sidebar", id: "sidebar" },
+        el("div", { class: "sidebar-logo" },
+          el("div", { style: "display:flex; align-items:center;" }, el("span", {}, "✦"), " 神降计划"),
+          el("button", { class: "sidebar-close-btn", id: "closeSidebarBtn", style: "display:none; background:none; border:none; color:#aaa; font-size:24px; cursor:pointer;" }, "×")
+        ),
+        el("div", { class: "menu-list", id: "sidebarMenuList" }),
+        el("div", { class: "sidebar-footer" }, "v.1.0.0 · 隐秘组织管理系统")
+      ),
+      // 主内容
+      el("div", { class: "main-wrapper" },
+        // 顶栏
+        el("header", { class: "topbar" },
+          el("div", { class: "topbar-left" },
+            el("button", { class: "mobile-menu-btn", id: "menuBtn" }, "☰"),
+            el("div", { class: "topbar-title", id: "topbarTitle" }, "主控台 / <span>DASHBOARD</span>")
+          ),
+          el("div", { class: "topbar-right" },
+            el("div", { class: "clock", id: "clock" }, "00:00:00"),
+            // 身份切换（仅管理员可见）
+            el("div", { class: "role-switch-wrap " + (session.role === "admin" ? "visible" : ""), id: "roleSwitchWrap" },
+              el("div", { class: "role-switch-btn", id: "roleSwitchBtn" }, "当前视角: 管理者 ▾"),
+              el("div", { class: "role-dropdown", id: "roleDropdown" },
+                el("div", { class: "role-dropdown-item active", "data-role": "admin" }, "管理者"),
+                el("div", { class: "role-dropdown-item", "data-role": "player" }, "玩家"),
+                el("div", { class: "role-dropdown-item", "data-role": "contractor" }, "契约者")
+              )
+            ),
+            el("a", { class: "btn-logout", "@click": () => { clearSession(); navigate("/login"); } }, "断开连接")
+          )
+        ),
+        // 动态内容区
+        el("main", { class: "content-container", id: "mainContent" })
+      )
+    );
+
+    root.appendChild(appLayout);
+
+    // --- 初始化逻辑 ---
+    
+    // 1. 时钟
+    function tickClock() { 
+      const now = new Date(); 
+      const h = String(now.getHours()).padStart(2, '0'), m = String(now.getMinutes()).padStart(2, '0'), s = String(now.getSeconds()).padStart(2, '0');
+      document.getElementById("clock").textContent = `${h}:${m}:${s}`; 
+    }
+    setInterval(tickClock, 1000); tickClock();
+
+    // 2. 移动端菜单
+    const sidebar = document.getElementById("sidebar");
+    const overlay = document.getElementById("sidebarOverlay");
+    document.getElementById("menuBtn").onclick = () => { sidebar.classList.add("open"); overlay.classList.add("active"); };
+    overlay.onclick = () => { sidebar.classList.remove("open"); overlay.classList.remove("active"); };
+    document.getElementById("closeSidebarBtn").onclick = () => { sidebar.classList.remove("open"); overlay.classList.remove("active"); };
+
+    // 3. 管理员视角切换
+    if (session.role === "admin") {
+      const roleBtn = document.getElementById("roleSwitchBtn");
+      const dropdown = document.getElementById("roleDropdown");
+      
+      roleBtn.onclick = () => dropdown.classList.toggle("show");
+      document.addEventListener("click", (e) => {
+        if (!document.getElementById("roleSwitchWrap").contains(e.target)) dropdown.classList.remove("show");
+      });
+
+      dropdown.querySelectorAll(".role-dropdown-item").forEach(item => {
+        item.onclick = () => {
+          viewRole = item.dataset.role;
+          dropdown.querySelectorAll(".role-dropdown-item").forEach(i => i.classList.toggle("active", i.dataset.role === viewRole));
+          
+          const label = viewRole === 'admin' ? '管理者' : (viewRole === 'player' ? '玩家' : '契约者');
+          roleBtn.textContent = `当前视角: ${label} ▾`;
+          
+          // 切换视角时，如果当前菜单在新视角下不存在，则重置为主控台
+          const targetMenuConfig = viewRole === "admin" ? menuConfig.admin : menuConfig.player;
+          if (!targetMenuConfig.find(m => m.id === currentMenuId)) {
+            currentMenuId = "dashboard";
+          }
+          
+          renderSidebar();
+          renderContent();
+          dropdown.classList.remove("show");
+        };
+      });
+    }
+
+    // 4. 渲染侧边栏
+    function renderSidebar() {
+      const config = viewRole === "admin" ? menuConfig.admin : menuConfig.player;
+      const menuListEl = document.getElementById("sidebarMenuList");
+      
+      menuListEl.innerHTML = config.map(item => `
+        <a class="menu-item ${item.id === currentMenuId ? 'active' : ''}" data-id="${item.id}" data-cn="${item.cn}" data-en="${item.en}">
+          <div class="menu-icon">${icons[item.id] || icons.dashboard}</div>
+          <div class="menu-text">
+            <span class="menu-cn">${item.cn}</span>
+            <span class="menu-en">${item.en}</span>
+          </div>
+        </a>
+      `).join('');
+
+      menuListEl.querySelectorAll('.menu-item').forEach(item => {
+        item.onclick = () => {
+          currentMenuId = item.dataset.id;
+          document.getElementById("topbarTitle").innerHTML = `${item.dataset.cn} / <span>${item.dataset.en}</span>`;
+          menuListEl.querySelectorAll('.menu-item').forEach(i => i.classList.remove('active'));
+          item.classList.add('active');
+          
+          renderContent();
+          if (window.innerWidth <= 768) { sidebar.classList.remove("open"); overlay.classList.remove("active"); }
+        };
+      });
+
+      // 更新顶栏标题
+      const activeItem = config.find(m => m.id === currentMenuId);
+      if (activeItem) document.getElementById("topbarTitle").innerHTML = `${activeItem.cn} / <span>${activeItem.en}</span>`;
+    }
+
+    // 5. 渲染主内容区
+    function renderContent() {
+      const contentEl = document.getElementById("mainContent");
+      contentEl.innerHTML = ""; // 清空
+      
+      // 如果存在地图实例，先销毁
+      if (panzoomInstance) {
+        panzoomInstance.destroy();
+        panzoomInstance = null;
+      }
+
+      if (currentMenuId === "dashboard") {
+        renderDashboardPage(contentEl, session.displayName);
+      } else if (currentMenuId === "map") {
+        renderMapPage(contentEl);
+      } else {
+        renderPlaceholderPage(contentEl);
+      }
+    }
+
+    // 初始渲染
+    renderSidebar();
+    renderContent();
+  }
+
+  /* =========================================================
+   *  7. 主界面子页面渲染
+   * ========================================================= */
+  
+  // 主控台
+  function renderDashboardPage(container, displayName) {
+    // 如果当前视角是 contract，映射到契约者数据；如果是 admin，映射到管理者数据
+    const roleDataKey = viewRole === 'contractor' ? 'contractor' : (viewRole === 'admin' ? 'admin' : 'player');
+    const data = mockData[roleDataKey];
+    
+    // 替换名字
+    const welcomeText = data.welcome.replace("[NAME]", displayName);
+    
+    container.innerHTML = `
+      <div class="welcome-banner panel-cut">
+        <div class="welcome-text">
+          <h1>${welcomeText}</h1>
+          <p>${data.sub}</p>
+        </div>
+        <div class="status-ring">
+          <svg viewBox="0 0 70 70">
+            <circle class="bg" cx="35" cy="35" r="30"></circle>
+            <circle class="progress" cx="35" cy="35" r="30" style="stroke-dashoffset: ${188 - (188 * (data.ring / 100))}"></circle>
+          </svg>
+          <div class="status-ring-text">
+            <span class="num">${data.ring}</span>
+            <span class="label">%</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-grid">
+        <div class="data-card panel-cut">
+          <div class="card-header"><span>${data.card1Label}</span><div class="card-icon">${icons.mission}</div></div>
+          <div class="card-value">${data.card1Value}</div>
+          <div class="card-desc">${data.card1Desc}</div>
+        </div>
+        <div class="data-card panel-cut">
+          <div class="card-header"><span>${data.card2Label}</span><div class="card-icon">${icons.forum}</div></div>
+          <div class="card-value">${data.card2Value}</div>
+          <div class="card-desc alert">${data.card2Desc}</div>
+        </div>
+        <div class="data-card panel-cut">
+          <div class="card-header"><span>${data.card3Label}</span><div class="card-icon">${icons.dashboard}</div></div>
+          <div class="card-value">${data.card3Value}</div>
+          <div class="card-desc">${data.card3Desc}</div>
+        </div>
+        <div class="data-card panel-cut">
+          <div class="card-header"><span>${data.card4Label}</span><div class="card-icon">${icons.member}</div></div>
+          <div class="card-value">${data.card4Value}</div>
+          <div class="card-desc alert">${data.card4Desc}</div>
+        </div>
+      </div>
+
+      <div class="bottom-grid">
+        <div class="timeline-panel panel-cut">
+          <div class="panel-title">最近动态</div>
+          <div class="timeline">
+            ${data.timeline.map(item => `<div class="tl-item"><div class="tl-time">${item.time}</div><div class="tl-content">${item.text}</div></div>`).join('')}
+          </div>
+        </div>
+        
+        <div class="action-panel panel-cut">
+          <div class="panel-title">快速操作</div>
+          <div class="action-list">
+            ${data.actions.map((text, i) => `<button class="action-btn">${text}<span>0${i+1} →</span></button>`).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // 地图页
+  function renderMapPage(container) {
+    container.innerHTML = `
+      <div class="map-layout">
+        <div class="map-area">
+          <div class="map-wrapper" id="mapWrapper">
+            <div style="position: relative; display: inline-block;" id="mapInner">
+              <img src="" id="mapImage" class="map-image" alt="地图">
+              <div id="markersContainer"></div>
+            </div>
+          </div>
+          <div class="map-controls">
+            <div class="ctrl-btn" id="mapZoomIn">+</div>
+            <div class="ctrl-btn" id="mapZoomOut">-</div>
+            <div class="ctrl-btn" id="mapReset" style="font-size: 14px;">⟲</div>
+          </div>
+        </div>
+        <div class="sidebar-right">
+          <div class="panel-header">
+            <div class="panel-title" style="margin-bottom:0; border:none; padding:0;">异常情况监控</div>
+            <div class="region-tabs">
+              <div class="region-tab active" data-region="A">A区 (城市)</div>
+              <div class="region-tab" data-region="B">B区 (海岸)</div>
+            </div>
+          </div>
+          <div class="panel-body" id="anomalyList"></div>
+        </div>
+      </div>
+    `;
+
+    let currentRegion = 'A';
+    const mapImage = document.getElementById('mapImage');
+    const markersContainer = document.getElementById('markersContainer');
+    const anomalyList = document.getElementById('anomalyList');
+    const diffColors = { 'D': 'var(--diff-d)', 'C': 'var(--diff-c)', 'B': 'var(--diff-b)', 'A': 'var(--diff-a)', 'S': 'var(--diff-s)' };
+
+    function initMap(regionKey) {
+      const regionData = mapData[regionKey];
+      mapImage.src = regionData.image;
+      markersContainer.innerHTML = '';
+      
+      regionData.anomalies.forEach(anomaly => {
+        const color = diffColors[anomaly.diff];
+        const marker = document.createElement('div');
+        marker.className = 'marker anomaly';
+        marker.style.left = `${anomaly.x}%`;
+        marker.style.top = `${anomaly.y}%`;
+        marker.style.color = color;
+        marker.innerHTML = `<div class="marker-icon"></div><div class="marker-label">${anomaly.name}</div>`;
+        marker.onclick = () => focusMarker(anomaly.x, anomaly.y);
+        markersContainer.appendChild(marker);
+      });
+
+      anomalyList.innerHTML = regionData.anomalies.map(a => `
+        <div class="anomaly-card" style="border-left-color: ${diffColors[a.diff]}" onclick="focusMarker(${a.x}, ${a.y})">
+          <div class="anomaly-header"><span class="anomaly-name">${a.name}</span><span class="anomaly-diff diff-${a.diff}">${a.diff}级</span></div>
+          <div class="anomaly-desc">${a.desc}</div>
+          <div class="anomaly-reward">悬赏：${a.reward}</div>
+        </div>
+      `).join('');
+
+      if (panzoomInstance) panzoomInstance.destroy();
+      const element = document.getElementById('mapWrapper');
+      panzoomInstance = Panzoom(element, {
+        maxScale: 5, minScale: 0.5, contain: 'outside', startScale: 1, canvas: true
+      });
+      element.addEventListener('dblclick', (e) => e.preventDefault());
+      element.parentElement.addEventListener('wheel', panzoomInstance.zoomWithWheel);
+    }
+
+    // 全局暴露 focusMarker 供 onclick 调用（临时方案）
+    window.focusMarker = function(xPercent, yPercent) {
+      if (!panzoomInstance) return;
+      const wrapper = document.getElementById('mapWrapper');
+      const wrapperWidth = wrapper.clientWidth, wrapperHeight = wrapper.clientHeight;
+      const scale = panzoomInstance.getScale(), inner = document.getElementById('mapInner');
+      const targetX = (inner.offsetWidth * (xPercent / 100)) * scale;
+      const targetY = (inner.offsetHeight * (yPercent / 100)) * scale;
+      const panX = (wrapperWidth / 2) - targetX;
+      const panY = (wrapperHeight / 2) - targetY;
+      panzoomInstance.pan(panX, panY, { animate: true, duration: 500 });
+    };
+
+    document.getElementById('mapZoomIn').onclick = () => panzoomInstance && panzoomInstance.zoomIn({ animate: true });
+    document.getElementById('mapZoomOut').onclick = () => panzoomInstance && panzoomInstance.zoomOut({ animate: true });
+    document.getElementById('mapReset').onclick = () => panzoomInstance && panzoomInstance.reset({ animate: true });
+
+    container.querySelectorAll('.region-tab').forEach(tab => {
+      tab.onclick = () => {
+        container.querySelectorAll('.region-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        currentRegion = tab.dataset.region;
+        initMap(currentRegion);
+      };
+    });
+
+    // 由于图片加载需要时间，我们稍微延迟初始化
+    setTimeout(() => initMap('A'), 100);
+  }
+
+  // 占位页
+  function renderPlaceholderPage(container) {
+    const configKey = viewRole === "admin" ? "admin" : "player";
+    const menuItem = menuConfig[configKey].find(m => m.id === currentMenuId);
+    const iconSvg = icons[currentMenuId] || icons.dashboard;
+    
+    container.innerHTML = `
+      <div class="placeholder-page panel-cut">
+        <div class="placeholder-icon">${iconSvg}</div>
+        <div class="placeholder-title">${menuItem ? menuItem.cn : '未知模块'}</div>
+        <div class="placeholder-sub">${menuItem ? menuItem.en : 'UNKNOWN MODULE'}</div>
+        <div class="placeholder-desc">该模块正在由隐秘组织进行数据搭建...</div>
+      </div>
+    `;
   }
 
   /* =========================================================
@@ -976,8 +1304,7 @@
   if (!location.hash) history.replaceState(null, "", "#/login");
   render();
 
-  // 首次打开网址时显示加载页
-  // 若已有会话，加载完成后自动跳转到主控台
+  // 首次加载时显示 Loading
   const existingSession = getSession();
   showLoadingScreen({
     onComplete: () => {
