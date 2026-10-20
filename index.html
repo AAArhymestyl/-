@@ -3,9 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>神降计划·塔</title>
-<!-- 引入地图拖拽缩放库 -->
-<script src="https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
+<title>神降计划·塔 - v1.0.0测试</title>
 <style>
   /* =========================================================
    *  全局主题变量
@@ -179,11 +177,11 @@
   /* =========================================================
    *  主系统面板 (Sidebar + Topbar + Main)
    * ========================================================= */
-  .app-layout { display: flex; height: 100vh; width: 100vw; overflow: hidden; }
+  .app-layout { display: flex; height: 100vh; height: 100dvh; width: 100vw; overflow: hidden; }
   
   /* 侧边栏 */
   .sidebar {
-    width: var(--sidebar-w); height: 100vh; background: rgba(5, 0, 0, 0.95); border-right: 1px solid var(--line-soft);
+    width: var(--sidebar-w); height: 100vh; height: 100dvh; background: rgba(5, 0, 0, 0.95); border-right: 1px solid var(--line-soft);
     display: flex; flex-direction: column; transition: transform 0.3s ease; z-index: 1000;
   }
   .sidebar-logo {
@@ -210,7 +208,7 @@
   .sidebar-overlay.active { opacity: 1; pointer-events: auto; }
 
   /* 主内容区 */
-  .main-wrapper { flex: 1; display: flex; flex-direction: column; height: 100vh; z-index: 10; position: relative; }
+  .main-wrapper { flex: 1; display: flex; flex-direction: column; height: 100vh; height: 100dvh; z-index: 10; position: relative; }
   
   /* 顶栏 */
   .topbar {
@@ -225,13 +223,13 @@
   .topbar-right { display: flex; align-items: center; gap: 20px; font-size: 13px; }
   .clock { font-family: monospace; font-size: 15px; color: var(--fg); letter-spacing: 1px; }
   
-  /* 身份切换下拉框（仅管理员可见） */
+  /* 身份显示 / 切换 */
   .role-switch-wrap { position: relative; display: none; } 
   .role-switch-wrap.visible { display: block; }
   .role-switch-btn {
     padding: 6px 14px; background: rgba(255, 179, 0, 0.1); border: 1px solid #ffb300;
     color: #ffca28; border-radius: 4px; font-size: 12px; cursor: pointer; letter-spacing: 1px; transition: all 0.2s;
-    display: flex; align-items: center; gap: 6px;
+    display: flex; align-items: center; gap: 6px; user-select: none;
   }
   .role-switch-btn:hover { background: #ffb300; color: #000; }
   .role-dropdown {
@@ -246,6 +244,12 @@
   }
   .role-dropdown-item:hover { background: rgba(232, 17, 35, 0.2); color: #fff; }
   .role-dropdown-item.active { color: var(--accent-bright); border-left-color: var(--accent); background: rgba(232,17,35,0.1); }
+
+  /* 普通用户的身份标签 */
+  .fixed-role-badge {
+    padding: 6px 14px; background: rgba(232, 17, 35, 0.1); border: 1px solid var(--accent);
+    color: var(--accent-bright); border-radius: 4px; font-size: 12px; letter-spacing: 1px;
+  }
 
   .btn-logout { color: var(--fg-mute); text-decoration: none; font-size: 13px; cursor: pointer; }
   .btn-logout:hover { color: var(--accent); }
@@ -310,13 +314,35 @@
   .action-btn:hover span { color: var(--accent-bright); }
 
   /* =========================================================
-   *  地图页面专用样式
+   *  地图页面专用样式 (自研拖拽/缩放版)
    * ========================================================= */
-  .map-layout { display: flex; flex: 1; width: 100%; gap: 20px; height: calc(100vh - var(--topbar-h) - 48px); }
-  .map-area { flex: 1; position: relative; overflow: hidden; background: #050505; border: 1px solid var(--line-soft); border-radius: 4px; }
-  .map-wrapper { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; cursor: grab; }
-  .map-wrapper:active { cursor: grabbing; }
-  .map-image { max-width: 100%; max-height: 100%; object-fit: contain; filter: invert(0.9) hue-rotate(180deg) grayscale(0.7) brightness(0.6) contrast(1.2); transition: opacity 0.3s; }
+  /* 沉浸模式：内容容器去掉内边距，地图撑满剩余高度 */
+  .content-container.map-mode { padding: 0; gap: 0; overflow: hidden; }
+
+  .map-layout { display: flex; flex: 1; width: 100%; gap: 20px; height: 100%; min-height: 0; }
+  
+  .map-area { 
+    flex: 1; position: relative; overflow: hidden; background: #050505; border: 1px solid var(--line-soft); border-radius: 4px; min-height: 0;
+    /* 增加边缘内阴影渐隐效果 */
+    box-shadow: inset 0 0 80px 40px #000;
+  }
+  
+  .map-wrapper { 
+    width: 100%; height: 100%; position: relative; overflow: hidden; cursor: grab;
+    touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  }
+  .map-wrapper.dragging { cursor: grabbing; }
+  
+  #mapInner { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
+  #mapInner.transition { transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1); }
+  
+  .map-image { 
+    display: block; 
+    max-width: none; 
+    max-height: none; 
+    filter: invert(0.9) hue-rotate(180deg) grayscale(0.7) brightness(0.6) contrast(1.2); 
+    transition: opacity 0.3s; 
+  }
   
   .marker { position: absolute; transform: translate(-50%, -50%); cursor: pointer; z-index: 10; display: flex; flex-direction: column; align-items: center; }
   .marker-icon { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 10px currentColor; background-color: currentColor; }
@@ -325,9 +351,17 @@
   .marker.anomaly::before { content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 30px; height: 30px; border-radius: 50%; border: 2px solid currentColor; opacity: 0; animation: pulse 2s infinite; }
   @keyframes pulse { 0% { transform: translateX(-50%) scale(0.5); opacity: 1; } 100% { transform: translateX(-50%) scale(2.5); opacity: 0; } }
 
-  .map-controls { position: absolute; bottom: 24px; left: 24px; display: flex; gap: 8px; }
+  .map-controls { position: absolute; bottom: 24px; left: 24px; display: flex; gap: 8px; z-index: 20; }
   .ctrl-btn { width: 40px; height: 40px; background: rgba(10,2,2,0.8); border: 1px solid var(--line-soft); color: #fff; font-size: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; border-radius: 4px; backdrop-filter: blur(4px); user-select: none; }
   .ctrl-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  .map-hint {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 20;
+    font-size: 11px; letter-spacing: 1px; color: var(--fg-dim); background: rgba(10,2,2,0.7);
+    border: 1px solid var(--line-soft); padding: 6px 14px; border-radius: 2px; backdrop-filter: blur(4px);
+    pointer-events: none; opacity: 0; transition: opacity 0.4s;
+  }
+  .map-hint.show { opacity: 1; }
 
   .sidebar-right { width: 320px; background: var(--panel-bg); border: 1px solid var(--line-soft); border-radius: 4px; display: flex; flex-direction: column; backdrop-filter: blur(10px); }
   .panel-header { padding: 20px; border-bottom: 1px solid var(--line-soft); }
@@ -388,9 +422,8 @@
   @media (max-width: 1024px) {
     .card-grid { grid-template-columns: repeat(2, 1fr); }
     .bottom-grid { grid-template-columns: 1fr; }
-    .map-layout { flex-direction: column; }
-    .sidebar-right { width: 100%; height: 300px; }
   }
+  /* 手机：地图页改为上下结构，地图区域撑满、侧栏变底部面板 */
   @media (max-width: 768px) {
     .sidebar { position: fixed; top: 0; left: 0; transform: translateX(-100%); }
     .sidebar.open { transform: translateX(0); }
@@ -399,6 +432,16 @@
     .topbar-title { display: none; }
     .welcome-banner { flex-direction: column; text-align: center; gap: 20px; }
     .card-grid { grid-template-columns: 1fr; }
+
+    .content-container.map-mode { padding: 0; }
+    .map-mode .map-layout { flex-direction: column; gap: 6px; }
+    .map-mode .map-area { flex: 1; min-height: 0; border-radius: 0; border-left: none; border-right: none; }
+    .map-mode .sidebar-right { width: 100%; height: 32vh; min-height: 200px; flex: none; border-radius: 0; border-left: none; border-right: none; }
+    .map-mode .panel-header { padding: 12px 14px; }
+    .map-mode .panel-body { padding: 12px 14px; }
+    .map-controls { bottom: 12px; left: 12px; }
+    .ctrl-btn { width: 36px; height: 36px; font-size: 18px; }
+    .map-hint { top: 10px; font-size: 10px; padding: 4px 10px; }
   }
   [hidden] { display: none !important; }
   .svg-defs { height: 0; width: 0; position: absolute; }
@@ -428,9 +471,8 @@
    *  1. 核心状态与路由配置
    * ========================================================= */
   const SESSION_KEY = "sdj_session";
-  const ADMIN_INVITE_CODE = "TOWER_ADMIN_2026"; // 内部管理员邀请码
+  const ADMIN_INVITE_CODE = "TOWER_ADMIN_2026"; 
   
-  // 路由映射
   const routes = {
     "/login": renderLogin,
     "/register": renderRegister,
@@ -497,7 +539,6 @@
     settings: `<svg viewBox="0 0 24 24"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.06-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.73,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.06,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.49-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></svg>`
   };
 
-  function getSvg(pathStr, cls="") { return `<svg class="${cls}" viewBox="0 0 24 24" fill="currentColor">${pathStr}</svg>`; }
   function iconPerson() { return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/></svg>`; }
   function iconLock() { return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>`; }
   function iconMail() { return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="1.5"/><path d="M3 7l9 6 9-6"/></svg>`; }
@@ -628,7 +669,8 @@
     const s = getSession();
     if (!s) return "欢迎来到神降计划。";
     if (s.role === "admin") return "欢迎回归神降计划隐秘系统，管理者。";
-    return "玩家/契约者，欢迎来到神降计划隐秘系统。";
+    if (s.role === "contractor") return "契约者，欢迎来到神降计划隐秘系统。";
+    return "玩家，欢迎来到神降计划隐秘系统。";
   }
 
   /* =========================================================
@@ -689,8 +731,6 @@
       }
       banner.hidden = true;
       setSession({ role, displayName: name.trim(), ts: Date.now(), auto });
-      
-      // 登录后，如果是管理员，默认进入管理者视图；如果是玩家/契约者，系统会根据选择自动分配
       showLoadingScreen({ onComplete: () => navigate("/app") });
     }
 
@@ -704,7 +744,8 @@
   }
 
   function renderRegister(root) {
-    let isAdminReg = false; // 是否处于管理员注册模式
+    let isAdminReg = false; 
+    let normalRole = "player"; 
     let form = { username: "", displayName: "", password: "", confirm: "", inviteCode: "" };
     let errors = { username: "", displayName: "", password: "", confirm: "", inviteCode: "" };
 
@@ -719,7 +760,16 @@
         el("div", { class: "field" }, el("label", { class: "field-label" }, "显示名"), inputWithIcon("displayName", iconPerson(), "1-20 位字符", val => { form.displayName = val; errors.displayName = val.length < 1 ? "不能为空" : ""; refreshErrors(); }), errBox("displayName")),
         el("div", { class: "field" }, el("label", { class: "field-label" }, "密码"), inputWithIcon("password", iconLock(), "至少 8 位，含字母与数字", val => { form.password = val; errors.password = validatePassword(val); if (form.confirm) errors.confirm = val !== form.confirm ? "两次密码不一致" : ""; refreshErrors(); }, "password"), errBox("password")),
         el("div", { class: "field" }, el("label", { class: "field-label" }, "确认密码"), inputWithIcon("confirm", iconLock(), "再次输入密码", val => { form.confirm = val; errors.confirm = val !== form.password ? "两次密码不一致" : ""; refreshErrors(); }, "password"), errBox("confirm")),
-        // 邀请码字段（默认隐藏）
+        
+        el("div", { class: "field", id: "normalRoleField" },
+          el("label", { class: "field-label" }, "注册身份"),
+          el("div", { class: "segmented", style: "margin-bottom: 0; gap: 12px;" },
+            el("div", { class: "seg-slider", id: "normalRoleSlider", style: "width: 0; display: none;" }), 
+            el("button", { class: "seg-btn active", "data-nrole": "player", type: "button" }, "玩家"),
+            el("button", { class: "seg-btn", "data-nrole": "contractor", type: "button" }, "契约者")
+          )
+        ),
+
         el("div", { class: "field invite-field", hidden: true },
           el("label", { class: "field-label" }, "内部邀请码"),
           inputWithIcon("inviteCode", iconKey(), "请输入管理者邀请码", val => { form.inviteCode = val; errors.inviteCode = val === ADMIN_INVITE_CODE ? "" : "无效邀请码"; refreshErrors(); }),
@@ -731,9 +781,11 @@
       )
     );
 
-    const segBtns = page.querySelectorAll(".seg-btn");
+    const segBtns = page.querySelectorAll(".segmented > .seg-btn"); 
     const slider = page.querySelector(".seg-slider");
     const inviteField = page.querySelector(".invite-field");
+    const normalRoleField = page.querySelector("#normalRoleField");
+    const normalRoleBtns = normalRoleField.querySelectorAll(".seg-btn");
 
     function refreshModeUI() {
       segBtns.forEach(s => s.classList.toggle("active", s.dataset.role === (isAdminReg ? "admin" : "normal")));
@@ -743,6 +795,7 @@
         slider.style.transform = `translateX(${activeSeg.offsetLeft}px)`;
       }
       inviteField.hidden = !isAdminReg;
+      normalRoleField.hidden = isAdminReg; 
     }
 
     segBtns.forEach(btn => btn.addEventListener("click", () => {
@@ -750,14 +803,12 @@
       refreshModeUI();
     }));
 
+    normalRoleBtns.forEach(btn => btn.addEventListener("click", () => {
+      normalRole = btn.dataset.nrole;
+      normalRoleBtns.forEach(b => b.classList.toggle("active", b.dataset.nrole === normalRole));
+    }));
+
     function refreshErrors() {
-      page.querySelectorAll(".field").forEach((f) => {
-        const errEl = f.querySelector(".field-error"); if (!errEl) return;
-        // 这里的 keys 必须对应 input 的顺序，由于动态显示/隐藏，直接遍历
-        const key = f.querySelector("input")?.classList[0] || ""; 
-        // 简单粗暴一点，直接用 data-key
-      });
-      // 由于使用简写，这里手动更新
       const fields = page.querySelectorAll(".field");
       const keys = ["username", "displayName", "password", "confirm", "inviteCode"];
       fields.forEach((f, i) => {
@@ -776,7 +827,7 @@
       if (isAdminReg) {
         errors.inviteCode = form.inviteCode === ADMIN_INVITE_CODE ? "" : "邀请码错误";
       } else {
-        errors.inviteCode = ""; // 普通注册忽略
+        errors.inviteCode = ""; 
       }
       refreshErrors();
 
@@ -784,9 +835,10 @@
         banner.hidden = false; banner.className = "banner"; banner.textContent = "请修正表单错误。"; return;
       }
 
-      // 注册成功
+      const finalRole = isAdminReg ? "admin" : normalRole;
+
       setSession({ 
-        role: isAdminReg ? "admin" : "player", 
+        role: finalRole, 
         displayName: form.displayName, 
         username: form.username, 
         ts: Date.now(), auto: false 
@@ -877,10 +929,8 @@
    *  6. 主应用框架 (/app)
    * ========================================================= */
   
-  // 主应用状态
-  let viewRole = "player"; // 当前视角：player / contractor / admin
-  let currentMenuId = "dashboard"; // 当前菜单项
-  let panzoomInstance = null; // 地图实例
+  let viewRole = "player";
+  let currentMenuId = "dashboard";
 
   const menuConfig = {
     player: [
@@ -907,7 +957,6 @@
     ]
   };
 
-  // 模拟数据（根据当前视角变化）
   const mockData = {
     player: {
       welcome: '玩家，[NAME]', sub: '今日 10月24日 · 探索未知的隐秘世界。', ring: 30,
@@ -938,16 +987,15 @@
     }
   };
 
-  // 地图数据
   const mapData = {
-    A: { image: 'assets/map-a.jpg', anomalies: [
+    A: { image: 'assets/map-a-ext.jpg', anomalies: [
         { id: 'a1', name: '守夜人酒吧', x: 18, y: 45, diff: 'D', desc: '不明窃听器信号', reward: '100 积分' },
         { id: 'a2', name: '老城居民区', x: 22, y: 62, diff: 'C', desc: '游荡的低阶残影', reward: '300 积分' },
         { id: 'a3', name: '紫金国际中心', x: 82, y: 30, diff: 'A', desc: '空间扭曲现象', reward: '2000 积分' },
         { id: 'a4', name: '中心医院', x: 31, y: 53, diff: 'B', desc: '太平间异变', reward: '800 积分' },
         { id: 'a5', name: '许愿池', x: 60, y: 83, diff: 'S', desc: '未确认图腾', reward: '？？？' }
     ]},
-    B: { image: 'assets/map-b.jpg', anomalies: [
+    B: { image: 'assets/map-b-ext.jpg', anomalies: [
         { id: 'b1', name: '圣神大教堂', x: 48, y: 31, diff: 'B', desc: '雕像流血事件', reward: '800 积分' },
         { id: 'b2', name: '沉船废骨', x: 72, y: 67, diff: 'A', desc: '深海呓语扩散', reward: '2000 积分' },
         { id: 'b3', name: '灰烬之地', x: 7, y: 87, diff: 'S', desc: '未知遗迹复苏', reward: '10000 积分' }
@@ -958,27 +1006,26 @@
     const session = getSession();
     if (!session) { navigate("/login"); return; }
 
-    // 根据登录时的角色初始化视角
-    // 如果登录是 player，那么视角就是 player (内部区分 contract/player 后续通过左侧菜单或顶部切换，但按用户要求，这里默认玩家，契约者类似)
-    // 如果登录是 admin，默认视角是 admin
-    viewRole = session.role === "admin" ? "admin" : "player";
+    if (session.role === "admin") {
+      viewRole = "admin";
+    } else if (session.role === "contractor") {
+      viewRole = "contractor";
+    } else {
+      viewRole = "player";
+    }
     currentMenuId = "dashboard";
 
     const appLayout = el("div", { class: "app-layout" },
-      // 遮罩
       el("div", { class: "sidebar-overlay", id: "sidebarOverlay" }),
-      // 侧边栏
       el("aside", { class: "sidebar", id: "sidebar" },
         el("div", { class: "sidebar-logo" },
           el("div", { style: "display:flex; align-items:center;" }, el("span", {}, "✦"), " 神降计划"),
           el("button", { class: "sidebar-close-btn", id: "closeSidebarBtn", style: "display:none; background:none; border:none; color:#aaa; font-size:24px; cursor:pointer;" }, "×")
         ),
         el("div", { class: "menu-list", id: "sidebarMenuList" }),
-        el("div", { class: "sidebar-footer" }, "v.1.0.0 · 隐秘组织管理系统")
+        el("div", { class: "sidebar-footer" }, "v.1.0.0 测试版")
       ),
-      // 主内容
       el("div", { class: "main-wrapper" },
-        // 顶栏
         el("header", { class: "topbar" },
           el("div", { class: "topbar-left" },
             el("button", { class: "mobile-menu-btn", id: "menuBtn" }, "☰"),
@@ -986,65 +1033,59 @@
           ),
           el("div", { class: "topbar-right" },
             el("div", { class: "clock", id: "clock" }, "00:00:00"),
-            // 身份切换（仅管理员可见）
-            el("div", { class: "role-switch-wrap " + (session.role === "admin" ? "visible" : ""), id: "roleSwitchWrap" },
-              el("div", { class: "role-switch-btn", id: "roleSwitchBtn" }, "当前视角: 管理者 ▾"),
-              el("div", { class: "role-dropdown", id: "roleDropdown" },
-                el("div", { class: "role-dropdown-item active", "data-role": "admin" }, "管理者"),
-                el("div", { class: "role-dropdown-item", "data-role": "player" }, "玩家"),
-                el("div", { class: "role-dropdown-item", "data-role": "contractor" }, "契约者")
-              )
-            ),
+            
+            session.role === "admin" 
+              ? el("div", { class: "role-switch-wrap visible", id: "roleSwitchWrap" },
+                  el("div", { class: "role-switch-btn", id: "roleSwitchBtn" }, "当前视角: 管理者 ▾"),
+                  el("div", { class: "role-dropdown", id: "roleDropdown" },
+                    el("div", { class: "role-dropdown-item active", "data-role": "admin" }, "管理者"),
+                    el("div", { class: "role-dropdown-item", "data-role": "player" }, "玩家"),
+                    el("div", { class: "role-dropdown-item", "data-role": "contractor" }, "契约者")
+                  )
+                )
+              : el("div", { class: "fixed-role-badge" }, 
+                  viewRole === "contractor" ? "身份：契约者" : "身份：玩家"
+                ),
+
             el("a", { class: "btn-logout", "@click": () => { clearSession(); navigate("/login"); } }, "断开连接")
           )
         ),
-        // 动态内容区
         el("main", { class: "content-container", id: "mainContent" })
       )
     );
 
     root.appendChild(appLayout);
 
-    // --- 初始化逻辑 ---
-    
-    // 1. 时钟
     function tickClock() { 
       const now = new Date(); 
       const h = String(now.getHours()).padStart(2, '0'), m = String(now.getMinutes()).padStart(2, '0'), s = String(now.getSeconds()).padStart(2, '0');
-      document.getElementById("clock").textContent = `${h}:${m}:${s}`; 
+      const el = document.getElementById("clock");
+      if (el) el.textContent = `${h}:${m}:${s}`; 
     }
     setInterval(tickClock, 1000); tickClock();
 
-    // 2. 移动端菜单
     const sidebar = document.getElementById("sidebar");
     const overlay = document.getElementById("sidebarOverlay");
     document.getElementById("menuBtn").onclick = () => { sidebar.classList.add("open"); overlay.classList.add("active"); };
     overlay.onclick = () => { sidebar.classList.remove("open"); overlay.classList.remove("active"); };
     document.getElementById("closeSidebarBtn").onclick = () => { sidebar.classList.remove("open"); overlay.classList.remove("active"); };
 
-    // 3. 管理员视角切换
     if (session.role === "admin") {
       const roleBtn = document.getElementById("roleSwitchBtn");
       const dropdown = document.getElementById("roleDropdown");
-      
       roleBtn.onclick = () => dropdown.classList.toggle("show");
       document.addEventListener("click", (e) => {
         if (!document.getElementById("roleSwitchWrap").contains(e.target)) dropdown.classList.remove("show");
       });
-
       dropdown.querySelectorAll(".role-dropdown-item").forEach(item => {
         item.onclick = () => {
           viewRole = item.dataset.role;
           dropdown.querySelectorAll(".role-dropdown-item").forEach(i => i.classList.toggle("active", i.dataset.role === viewRole));
-          
           const label = viewRole === 'admin' ? '管理者' : (viewRole === 'player' ? '玩家' : '契约者');
           roleBtn.textContent = `当前视角: ${label} ▾`;
           
-          // 切换视角时，如果当前菜单在新视角下不存在，则重置为主控台
           const targetMenuConfig = viewRole === "admin" ? menuConfig.admin : menuConfig.player;
-          if (!targetMenuConfig.find(m => m.id === currentMenuId)) {
-            currentMenuId = "dashboard";
-          }
+          if (!targetMenuConfig.find(m => m.id === currentMenuId)) currentMenuId = "dashboard";
           
           renderSidebar();
           renderContent();
@@ -1053,18 +1094,13 @@
       });
     }
 
-    // 4. 渲染侧边栏
     function renderSidebar() {
       const config = viewRole === "admin" ? menuConfig.admin : menuConfig.player;
       const menuListEl = document.getElementById("sidebarMenuList");
-      
       menuListEl.innerHTML = config.map(item => `
         <a class="menu-item ${item.id === currentMenuId ? 'active' : ''}" data-id="${item.id}" data-cn="${item.cn}" data-en="${item.en}">
           <div class="menu-icon">${icons[item.id] || icons.dashboard}</div>
-          <div class="menu-text">
-            <span class="menu-cn">${item.cn}</span>
-            <span class="menu-en">${item.en}</span>
-          </div>
+          <div class="menu-text"><span class="menu-cn">${item.cn}</span><span class="menu-en">${item.en}</span></div>
         </a>
       `).join('');
 
@@ -1074,27 +1110,20 @@
           document.getElementById("topbarTitle").innerHTML = `${item.dataset.cn} / <span>${item.dataset.en}</span>`;
           menuListEl.querySelectorAll('.menu-item').forEach(i => i.classList.remove('active'));
           item.classList.add('active');
-          
           renderContent();
           if (window.innerWidth <= 768) { sidebar.classList.remove("open"); overlay.classList.remove("active"); }
         };
       });
 
-      // 更新顶栏标题
       const activeItem = config.find(m => m.id === currentMenuId);
       if (activeItem) document.getElementById("topbarTitle").innerHTML = `${activeItem.cn} / <span>${activeItem.en}</span>`;
     }
 
-    // 5. 渲染主内容区
     function renderContent() {
       const contentEl = document.getElementById("mainContent");
-      contentEl.innerHTML = ""; // 清空
-      
-      // 如果存在地图实例，先销毁
-      if (panzoomInstance) {
-        panzoomInstance.destroy();
-        panzoomInstance = null;
-      }
+      contentEl.innerHTML = ""; 
+      // 地图页进入“沉浸模式”：内容容器取消内边距与滚动，地图撑满剩余高度
+      contentEl.classList.toggle("map-mode", currentMenuId === "map");
 
       if (currentMenuId === "dashboard") {
         renderDashboardPage(contentEl, session.displayName);
@@ -1105,97 +1134,72 @@
       }
     }
 
-    // 初始渲染
     renderSidebar();
     renderContent();
   }
 
-  /* =========================================================
-   *  7. 主界面子页面渲染
-   * ========================================================= */
-  
-  // 主控台
   function renderDashboardPage(container, displayName) {
-    // 如果当前视角是 contract，映射到契约者数据；如果是 admin，映射到管理者数据
     const roleDataKey = viewRole === 'contractor' ? 'contractor' : (viewRole === 'admin' ? 'admin' : 'player');
     const data = mockData[roleDataKey];
-    
-    // 替换名字
     const welcomeText = data.welcome.replace("[NAME]", displayName);
     
     container.innerHTML = `
       <div class="welcome-banner panel-cut">
-        <div class="welcome-text">
-          <h1>${welcomeText}</h1>
-          <p>${data.sub}</p>
-        </div>
+        <div class="welcome-text"><h1>${welcomeText}</h1><p>${data.sub}</p></div>
         <div class="status-ring">
           <svg viewBox="0 0 70 70">
             <circle class="bg" cx="35" cy="35" r="30"></circle>
             <circle class="progress" cx="35" cy="35" r="30" style="stroke-dashoffset: ${188 - (188 * (data.ring / 100))}"></circle>
           </svg>
-          <div class="status-ring-text">
-            <span class="num">${data.ring}</span>
-            <span class="label">%</span>
-          </div>
+          <div class="status-ring-text"><span class="num">${data.ring}</span><span class="label">%</span></div>
         </div>
       </div>
-
       <div class="card-grid">
         <div class="data-card panel-cut">
           <div class="card-header"><span>${data.card1Label}</span><div class="card-icon">${icons.mission}</div></div>
-          <div class="card-value">${data.card1Value}</div>
-          <div class="card-desc">${data.card1Desc}</div>
+          <div class="card-value">${data.card1Value}</div><div class="card-desc">${data.card1Desc}</div>
         </div>
         <div class="data-card panel-cut">
           <div class="card-header"><span>${data.card2Label}</span><div class="card-icon">${icons.forum}</div></div>
-          <div class="card-value">${data.card2Value}</div>
-          <div class="card-desc alert">${data.card2Desc}</div>
+          <div class="card-value">${data.card2Value}</div><div class="card-desc alert">${data.card2Desc}</div>
         </div>
         <div class="data-card panel-cut">
           <div class="card-header"><span>${data.card3Label}</span><div class="card-icon">${icons.dashboard}</div></div>
-          <div class="card-value">${data.card3Value}</div>
-          <div class="card-desc">${data.card3Desc}</div>
+          <div class="card-value">${data.card3Value}</div><div class="card-desc">${data.card3Desc}</div>
         </div>
         <div class="data-card panel-cut">
           <div class="card-header"><span>${data.card4Label}</span><div class="card-icon">${icons.member}</div></div>
-          <div class="card-value">${data.card4Value}</div>
-          <div class="card-desc alert">${data.card4Desc}</div>
+          <div class="card-value">${data.card4Value}</div><div class="card-desc alert">${data.card4Desc}</div>
         </div>
       </div>
-
       <div class="bottom-grid">
         <div class="timeline-panel panel-cut">
           <div class="panel-title">最近动态</div>
-          <div class="timeline">
-            ${data.timeline.map(item => `<div class="tl-item"><div class="tl-time">${item.time}</div><div class="tl-content">${item.text}</div></div>`).join('')}
-          </div>
+          <div class="timeline">${data.timeline.map(item => `<div class="tl-item"><div class="tl-time">${item.time}</div><div class="tl-content">${item.text}</div></div>`).join('')}</div>
         </div>
-        
         <div class="action-panel panel-cut">
           <div class="panel-title">快速操作</div>
-          <div class="action-list">
-            ${data.actions.map((text, i) => `<button class="action-btn">${text}<span>0${i+1} →</span></button>`).join('')}
-          </div>
+          <div class="action-list">${data.actions.map((text, i) => `<button class="action-btn">${text}<span>0${i+1} →</span></button>`).join('')}</div>
         </div>
       </div>
     `;
   }
 
-  // 地图页
+  // 地图页：自研拖拽/缩放（鼠标滚轮 + 触摸拖拽 + 双指捏合），全图可达，适配移动端
   function renderMapPage(container) {
     container.innerHTML = `
       <div class="map-layout">
         <div class="map-area">
           <div class="map-wrapper" id="mapWrapper">
-            <div style="position: relative; display: inline-block;" id="mapInner">
-              <img src="" id="mapImage" class="map-image" alt="地图">
+            <div id="mapInner">
+              <img src="" id="mapImage" class="map-image" alt="地图加载中...">
               <div id="markersContainer"></div>
             </div>
           </div>
+          <div class="map-hint" id="mapHint">拖拽移动 · 滚轮/双指缩放 · 双击放大</div>
           <div class="map-controls">
             <div class="ctrl-btn" id="mapZoomIn">+</div>
-            <div class="ctrl-btn" id="mapZoomOut">-</div>
+            <div class="ctrl-btn" id="mapZoomOut">−</div>
             <div class="ctrl-btn" id="mapReset" style="font-size: 14px;">⟲</div>
           </div>
         </div>
@@ -1213,61 +1217,224 @@
     `;
 
     let currentRegion = 'A';
+    const wrapper = document.getElementById('mapWrapper');
+    const inner = document.getElementById('mapInner');
     const mapImage = document.getElementById('mapImage');
     const markersContainer = document.getElementById('markersContainer');
     const anomalyList = document.getElementById('anomalyList');
+    const mapHint = document.getElementById('mapHint');
     const diffColors = { 'D': 'var(--diff-d)', 'C': 'var(--diff-c)', 'B': 'var(--diff-b)', 'A': 'var(--diff-a)', 'S': 'var(--diff-s)' };
 
-    function initMap(regionKey) {
-      const regionData = mapData[regionKey];
-      mapImage.src = regionData.image;
-      markersContainer.innerHTML = '';
-      
-      regionData.anomalies.forEach(anomaly => {
-        const color = diffColors[anomaly.diff];
-        const marker = document.createElement('div');
-        marker.className = 'marker anomaly';
-        marker.style.left = `${anomaly.x}%`;
-        marker.style.top = `${anomaly.y}%`;
-        marker.style.color = color;
-        marker.innerHTML = `<div class="marker-icon"></div><div class="marker-label">${anomaly.name}</div>`;
-        marker.onclick = () => focusMarker(anomaly.x, anomaly.y);
-        markersContainer.appendChild(marker);
-      });
+    /* ---------- 自研地图查看器状态 ---------- */
+    let scale = 1, tx = 0, ty = 0;
+    let minScale = 0.1, maxScale = 6;
+    const PAD_RATIO = 0.12; // 与预处理扩展图一致：延边 = 原尺寸的 12%
 
-      anomalyList.innerHTML = regionData.anomalies.map(a => `
-        <div class="anomaly-card" style="border-left-color: ${diffColors[a.diff]}" onclick="focusMarker(${a.x}, ${a.y})">
-          <div class="anomaly-header"><span class="anomaly-name">${a.name}</span><span class="anomaly-diff diff-${a.diff}">${a.diff}级</span></div>
-          <div class="anomaly-desc">${a.desc}</div>
-          <div class="anomaly-reward">悬赏：${a.reward}</div>
-        </div>
-      `).join('');
-
-      if (panzoomInstance) panzoomInstance.destroy();
-      const element = document.getElementById('mapWrapper');
-      panzoomInstance = Panzoom(element, {
-        maxScale: 5, minScale: 0.5, contain: 'outside', startScale: 1, canvas: true
-      });
-      element.addEventListener('dblclick', (e) => e.preventDefault());
-      element.parentElement.addEventListener('wheel', panzoomInstance.zoomWithWheel);
+    function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
+    function viewSize() { const w = wrapper.clientWidth, h = wrapper.clientHeight; return { w: w || 1, h: h || 1 }; }
+    function fitScale() {
+      const { w, h } = viewSize();
+      const iw = mapImage.naturalWidth, ih = mapImage.naturalHeight;
+      if (!iw || !ih) return 1;
+      return Math.min(w / iw, h / ih) * 0.9; // 全图完整可见，四周留黑边
     }
 
-    // 全局暴露 focusMarker 供 onclick 调用（临时方案）
-    window.focusMarker = function(xPercent, yPercent) {
-      if (!panzoomInstance) return;
-      const wrapper = document.getElementById('mapWrapper');
-      const wrapperWidth = wrapper.clientWidth, wrapperHeight = wrapper.clientHeight;
-      const scale = panzoomInstance.getScale(), inner = document.getElementById('mapInner');
-      const targetX = (inner.offsetWidth * (xPercent / 100)) * scale;
-      const targetY = (inner.offsetHeight * (yPercent / 100)) * scale;
-      const panX = (wrapperWidth / 2) - targetX;
-      const panY = (wrapperHeight / 2) - targetY;
-      panzoomInstance.pan(panX, panY, { animate: true, duration: 500 });
+    function apply(animate) {
+      inner.classList.toggle('transition', !!animate);
+      inner.style.transform = 'translate3d(' + tx + 'px,' + ty + 'px,0) scale(' + scale + ')';
+    }
+
+    function constrain() {
+      const { w, h } = viewSize();
+      const sw = mapImage.naturalWidth * scale, sh = mapImage.naturalHeight * scale;
+      const slackX = w * 0.25, slackY = h * 0.25; // 允许拖出边界看到模糊延边
+      let minTx = w - sw - slackX, maxTx = slackX;
+      let minTy = h - sh - slackY, maxTy = slackY;
+      if (sw <= w) { minTx = (w - sw) / 2; maxTx = minTx; }
+      if (sh <= h) { minTy = (h - sh) / 2; maxTy = minTy; }
+      tx = clamp(tx, minTx, maxTx);
+      ty = clamp(ty, minTy, maxTy);
+    }
+
+    // 以屏幕坐标 (cx, cy) 为中心缩放 factor 倍
+    function zoomAt(cx, cy, factor) {
+      const rect = wrapper.getBoundingClientRect();
+      const px = cx - rect.left, py = cy - rect.top;
+      const newScale = clamp(scale * factor, minScale, maxScale);
+      const r = newScale / scale;
+      tx = px - (px - tx) * r;
+      ty = py - (py - ty) * r;
+      scale = newScale;
+      constrain();
+      apply(false);
+    }
+
+    function fitAndCenter(animate) {
+      scale = clamp(fitScale(), minScale, maxScale);
+      const { w, h } = viewSize();
+      tx = (w - mapImage.naturalWidth * scale) / 2;
+      ty = (h - mapImage.naturalHeight * scale) / 2;
+      constrain();
+      apply(animate);
+    }
+
+    /* ---------- 统一指针事件：鼠标拖拽 + 触摸拖拽 + 双指捏合 ---------- */
+    const pointers = new Map();
+    let dragStart = null, pinchStart = null;
+
+    wrapper.addEventListener('pointerdown', (e) => {
+      try { wrapper.setPointerCapture(e.pointerId); } catch (err) {}
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pointers.size === 1) {
+        dragStart = { startTx: tx, startTy: ty, x: e.clientX, y: e.clientY };
+      } else if (pointers.size === 2) {
+        const pts = [...pointers.values()];
+        dragStart = null;
+        pinchStart = {
+          dist: Math.max(1, Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)),
+          scale: scale, tx: tx, ty: ty
+        };
+      }
+      wrapper.classList.add('dragging');
+      e.preventDefault();
+    });
+
+    wrapper.addEventListener('pointermove', (e) => {
+      if (!pointers.has(e.pointerId)) return;
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      const pts = [...pointers.values()];
+
+      if (pointers.size === 1 && dragStart) {
+        tx = dragStart.startTx + (e.clientX - dragStart.x);
+        ty = dragStart.startTy + (e.clientY - dragStart.y);
+        constrain();
+        apply(false);
+      } else if (pointers.size === 2 && pinchStart) {
+        const d = Math.max(1, Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y));
+        const rect = wrapper.getBoundingClientRect();
+        const mx = (pts[0].x + pts[1].x) / 2 - rect.left;
+        const my = (pts[0].y + pts[1].y) / 2 - rect.top;
+        const newScale = clamp(pinchStart.scale * (d / pinchStart.dist), minScale, maxScale);
+        const r = newScale / pinchStart.scale;
+        tx = mx - (mx - pinchStart.tx) * r;
+        ty = my - (my - pinchStart.ty) * r;
+        scale = newScale;
+        constrain();
+        apply(false);
+      }
+      e.preventDefault();
+    });
+
+    function endPointer(e) {
+      pointers.delete(e.pointerId);
+      if (pointers.size < 2) pinchStart = null;
+      if (pointers.size === 0) dragStart = null;
+      wrapper.classList.remove('dragging');
+    }
+    wrapper.addEventListener('pointerup', endPointer);
+    wrapper.addEventListener('pointercancel', endPointer);
+    wrapper.addEventListener('pointerleave', (e) => { if (pointers.size === 1) endPointer(e); });
+
+    // 鼠标滚轮缩放
+    wrapper.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.12 : 1 / 1.12);
+    }, { passive: false });
+
+    // 双击放大
+    wrapper.addEventListener('dblclick', (e) => { e.preventDefault(); zoomAt(e.clientX, e.clientY, 1.8); });
+
+    // 提示条
+    let hintTimer = null;
+    function flashHint() {
+      mapHint.classList.add('show');
+      clearTimeout(hintTimer);
+      hintTimer = setTimeout(() => mapHint.classList.remove('show'), 2600);
+    }
+    flashHint();
+
+    // 窗口尺寸变化（旋转/缩放）后重新适配
+    window.addEventListener('resize', () => {
+      if (scale <= minScale + 0.001) { fitAndCenter(false); }
+      else { constrain(); apply(false); }
+    });
+
+    /* ---------- 初始化区域 ---------- */
+    let loadToken = 0; // 防止切换区域时旧图片的 onerror/onload 误触发
+    function initMap(regionKey) {
+      const regionData = mapData[regionKey];
+      const myToken = ++loadToken;
+      inner.classList.remove('transition');
+      markersContainer.innerHTML = '';
+      mapImage.onerror = null;
+      mapImage.src = '';
+
+      mapImage.onload = () => {
+        if (myToken !== loadToken) return;
+        // 扩展图：标记容器贴在“原图内容区”上（扣除四周模糊延边）
+        const padX = Math.round(mapImage.naturalWidth * PAD_RATIO / (1 + 2 * PAD_RATIO));
+        const padY = Math.round(mapImage.naturalHeight * PAD_RATIO / (1 + 2 * PAD_RATIO));
+        markersContainer.style.position = 'absolute';
+        markersContainer.style.left = padX + 'px';
+        markersContainer.style.top = padY + 'px';
+        markersContainer.style.width = (mapImage.naturalWidth - 2 * padX) + 'px';
+        markersContainer.style.height = (mapImage.naturalHeight - 2 * padY) + 'px';
+
+        regionData.anomalies.forEach(anomaly => {
+          const color = diffColors[anomaly.diff];
+          const marker = document.createElement('div');
+          marker.className = 'marker anomaly';
+          marker.style.left = anomaly.x + '%';
+          marker.style.top = anomaly.y + '%';
+          marker.style.color = color;
+          marker.innerHTML = '<div class="marker-icon"></div><div class="marker-label">' + anomaly.name + '</div>';
+          marker.onclick = (e) => { e.stopPropagation(); focusMarker(anomaly.x, anomaly.y); };
+          markersContainer.appendChild(marker);
+        });
+
+        anomalyList.innerHTML = regionData.anomalies.map(a => `
+          <div class="anomaly-card" style="border-left-color: ${diffColors[a.diff]}" onclick="focusMarker(${a.x}, ${a.y})">
+            <div class="anomaly-header"><span class="anomaly-name">${a.name}</span><span class="anomaly-diff diff-${a.diff}">${a.diff}级</span></div>
+            <div class="anomaly-desc">${a.desc}</div>
+            <div class="anomaly-reward">悬赏：${a.reward}</div>
+          </div>
+        `).join('');
+
+        // 最小缩放到“全图完整可见”，保证任何时刻都能看全整张地图
+        minScale = fitScale();
+        fitAndCenter(false);
+      };
+
+      mapImage.onerror = () => {
+        if (myToken !== loadToken) return;
+        alert('地图加载失败！请检查 assets/' + (regionKey === 'A' ? 'map-a-ext.jpg' : 'map-b-ext.jpg') + ' 是否存在。');
+      };
+
+      mapImage.src = regionData.image;
+    }
+
+    // 聚焦某坐标点：居中并适当放大
+    window.focusMarker = function (xPercent, yPercent) {
+      if (!mapImage.naturalWidth || !scale) return;
+      const { w, h } = viewSize();
+      const baseFit = fitScale();
+      const targetScale = clamp(scale < baseFit * 1.5 ? baseFit * 1.6 : scale, minScale, maxScale);
+      const padX = Math.round(mapImage.naturalWidth * PAD_RATIO / (1 + 2 * PAD_RATIO));
+      const padY = Math.round(mapImage.naturalHeight * PAD_RATIO / (1 + 2 * PAD_RATIO));
+      const contentW = mapImage.naturalWidth - 2 * padX;
+      const contentH = mapImage.naturalHeight - 2 * padY;
+      const imgX = padX + contentW * (xPercent / 100);
+      const imgY = padY + contentH * (yPercent / 100);
+      scale = targetScale;
+      tx = w / 2 - imgX * targetScale;
+      ty = h / 2 - imgY * targetScale;
+      constrain();
+      apply(true);
     };
 
-    document.getElementById('mapZoomIn').onclick = () => panzoomInstance && panzoomInstance.zoomIn({ animate: true });
-    document.getElementById('mapZoomOut').onclick = () => panzoomInstance && panzoomInstance.zoomOut({ animate: true });
-    document.getElementById('mapReset').onclick = () => panzoomInstance && panzoomInstance.reset({ animate: true });
+    document.getElementById('mapZoomIn').onclick = () => zoomAt(wrapper.clientWidth / 2, wrapper.clientHeight / 2, 1.35);
+    document.getElementById('mapZoomOut').onclick = () => zoomAt(wrapper.clientWidth / 2, wrapper.clientHeight / 2, 1 / 1.35);
+    document.getElementById('mapReset').onclick = () => fitAndCenter(true);
 
     container.querySelectorAll('.region-tab').forEach(tab => {
       tab.onclick = () => {
@@ -1278,16 +1445,13 @@
       };
     });
 
-    // 由于图片加载需要时间，我们稍微延迟初始化
-    setTimeout(() => initMap('A'), 100);
+    initMap('A');
   }
 
-  // 占位页
   function renderPlaceholderPage(container) {
     const configKey = viewRole === "admin" ? "admin" : "player";
     const menuItem = menuConfig[configKey].find(m => m.id === currentMenuId);
     const iconSvg = icons[currentMenuId] || icons.dashboard;
-    
     container.innerHTML = `
       <div class="placeholder-page panel-cut">
         <div class="placeholder-icon">${iconSvg}</div>
@@ -1299,12 +1463,11 @@
   }
 
   /* =========================================================
-   *  8. 启动
+   *  7. 启动
    * ========================================================= */
   if (!location.hash) history.replaceState(null, "", "#/login");
   render();
 
-  // 首次加载时显示 Loading
   const existingSession = getSession();
   showLoadingScreen({
     onComplete: () => {
