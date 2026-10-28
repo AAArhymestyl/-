@@ -1172,6 +1172,7 @@
       } else {
         renderPlaceholderPage(contentEl);
       }
+      renderBroadcastBanner();
     }
 
     renderSidebar();
@@ -1221,16 +1222,67 @@
     } catch (e) { return username; }
   }
 
+  // 全服广播：字段来自 world_state.broadcasts（服务端写入），过期的自动隐藏
+  function activeBroadcasts() {
+    return (loadState().broadcasts || [])
+      .filter(b => b && b.text && (!b.expiresAt || b.expiresAt > Date.now()))
+      .slice()
+      .sort((a, b) => (b.at || 0) - (a.at || 0));
+  }
+
+  function remainText(ts) {
+    const ms = ts - Date.now();
+    if (ms <= 0) return "已结束";
+    const min = Math.floor(ms / 60000);
+    if (min < 60) return min + " 分钟";
+    const h = Math.floor(min / 60);
+    if (h < 24) return h + " 小时 " + (min % 60) + " 分";
+    return Math.floor(h / 24) + " 天 " + (h % 24) + " 小时";
+  }
+
+  function openBroadcastHistory(list) {
+    const overlay = el("div", { class: "modal-overlay", id: "broadcastHistory" });
+    const panel = el("div", { class: "modal-panel panel-cut" });
+    overlay.appendChild(panel);
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+    requestAnimationFrame(() => overlay.classList.add("show"));
+    panel.innerHTML = `
+      <div class="modal-title">全服广播 · 历史</div>
+      <div class="modal-desc">当前有效 ${list.length} 条（服务端保留最近 50 条）</div>
+      <div class="bs-list">
+        ${list.map(b => `<div class="bs-row">
+          <div class="bs-row-text">${escHTML(b.text)}</div>
+          <div class="bs-row-meta">${fmtTime(b.at)} · ${escHTML(b.by || "管理者")}${b.minutes ? " · 持续 " + b.minutes + " 分钟" : ""}${b.expiresAt ? " · 剩余 " + remainText(b.expiresAt) : ""}</div>
+        </div>`).join("") || `<div class="empty-state">暂无有效广播</div>`}
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn-sm ghost" id="bsClose">关闭</button></div>`;
+    panel.querySelector("#bsClose").onclick = () => overlay.remove();
+  }
+
+  // 页面顶部横板：新广播覆盖显示，历史可点开查看每条发送时间
+  function renderBroadcastBanner() {
+    const host = document.getElementById("mainContent");
+    if (!host || !host.isConnected) return;
+    const old = host.querySelector(".broadcast-strip");
+    if (old) old.remove();
+    const list = activeBroadcasts();
+    if (!list.length) return;
+    const top = list[0];
+    const strip = el("div", { class: "broadcast-strip" });
+    strip.innerHTML = `
+      <span class="bs-label">全服广播</span>
+      <span class="bs-viewport"><span class="bs-track">${escHTML(top.text)}</span></span>
+      <span class="bs-time">${fmtTime(top.at)}${top.expiresAt ? " · 剩余 " + remainText(top.expiresAt) : ""}</span>
+      <button class="link-btn bs-history" id="bsHistory">历史 ${list.length}</button>`;
+    host.insertBefore(strip, host.firstChild);
+    const btn = strip.querySelector("#bsHistory");
+    if (btn) btn.onclick = () => openBroadcastHistory(list);
+  }
+
   function dashboardBroadcastText() {
-    const posts = (loadState().forum || []).filter(p =>
-      p && (String(p.title || "").includes("全服广播") || p.author === "议会广播")
-    );
-    posts.sort((a, b) => {
-      const ta = a.createdAt || Number(String(a.id || "").replace(/\D/g, "")) || 0;
-      const tb = b.createdAt || Number(String(b.id || "").replace(/\D/g, "")) || 0;
-      return tb - ta;
-    });
-    return posts.slice(0, 3).map(p => String(p.body || p.title || "").trim()).filter(Boolean).join("　✦　");
+    const list = activeBroadcasts();
+    return list.slice(0, 3).map(b => String(b.text || "").trim()).filter(Boolean).join("　✦　");
   }
 
   function loadExploreStats(container) {
@@ -2363,6 +2415,7 @@
       missions: [],
       items: [],
       wallets: {},
+      broadcasts: [],
       rosterVersion: 0,
       bag: [],
       cards: { version: 1, renames: {}, overrides: {}, added: {}, removed: {}, holdings: {} },
@@ -2908,6 +2961,7 @@
     else if (currentMenuId === "member" && viewRole === "admin") renderMemberPage(host);
     else if (currentMenuId === "council") renderCouncilPage(host, viewRole === "admin");
     else if (currentMenuId === "codex") renderCodexPage(host);
+    renderBroadcastBanner();
   }
 
   async function onWorldCloudChange() {
@@ -2948,8 +3002,13 @@
   }
 
   function mergeLiked(rows, prev) {
+    const me = (getSession() || {}).username;
     const likedIds = new Set((prev || []).filter(p => p.liked).map(p => String(p.id)));
-    return rows.map(r => Object.assign({}, r, { liked: likedIds.has(String(r.id)) }));
+    return rows.map(r => Object.assign({}, r, {
+      liked: me && Array.isArray(r.likedBy)
+        ? r.likedBy.indexOf(me) >= 0
+        : likedIds.has(String(r.id))
+    }));
   }
 
   // 云端 world_state → 本地状态统一合并（含跨设备的审批/注册/钱包/通知）
@@ -2963,6 +3022,8 @@
     if (world.activity_log) merged.activityLog = world.activity_log;
     if (world.system_alerts) merged.systemAlerts = world.system_alerts;
     if (world.wallets) merged.wallets = world.wallets;
+    if (Array.isArray(world.broadcasts)) merged.broadcasts = world.broadcasts;
+    else merged.broadcasts = merged.broadcasts || [];
     if (world.notifications) {
       // 通知正文以云端为准，已读状态保留本机（各设备各自已读）
       const readIds = new Set((merged.notifications || []).filter(n => n.read).map(n => String(n.id)));
@@ -4348,6 +4409,15 @@
         e.stopPropagation();
         const p = loadState().forum.find(x => x.id === btn.dataset.like);
         if (!p) return;
+        if (cloud && /^[0-9a-f-]{36}$/i.test(String(p.id))) {
+          const r = await window.SDJCloud.toggleForumLike(p.id);
+          if (!r.ok) { toast(r.error || "点赞失败"); return; }
+          p.liked = !!r.liked;
+          p.likes = r.likes || 0;
+          saveState();
+          renderForumPage(container, isAdmin);
+          return;
+        }
         const nextLiked = !p.liked;
         const nextLikes = Math.max(0, (p.likes || 0) + (nextLiked ? 1 : -1));
         p.liked = nextLiked;
@@ -4649,10 +4719,24 @@
         if (e.key === "Enter") wrap.querySelector("#commentSend").click();
       });
 
-      wrap.querySelector("#commentSend").onclick = () => {
+      wrap.querySelector("#commentSend").onclick = async () => {
         const input = wrap.querySelector("#commentInput");
         const text = input.value.trim();
         if (!text) { toast("评论内容不能为空"); return; }
+        if (cloud && /^[0-9a-f-]{36}$/i.test(String(postId))) {
+          const target = replyTo ? (comments.find(x => x.id === replyTo) || null) : null;
+          const payload = target ? `@${target.author} ${text}` : text;
+          const r = await window.SDJCloud.addForumComment(postId, payload);
+          if (!r.ok) { toast(r.error || "评论失败"); return; }
+          const cur2 = loadState().forum.find(x => x.id === postId);
+          if (cur2) { cur2.comments = r.comments || []; saveState(); }
+          input.value = "";
+          replyTo = null;
+          const hint = wrap.querySelector("#replyHint");
+          if (hint) hint.hidden = true;
+          draw();
+          return;
+        }
         const cur = loadState().forum.find(x => x.id === postId);
         if (!cur) return;
         cur.comments = cur.comments || [];
@@ -6983,7 +7067,15 @@
       tools: `<span class="count-chip">${rows.length} 名成员</span>`,
       body: `
         <div class="broadcast panel-cut">
-          <input class="input-line" id="broadcastInput" placeholder="向全服发送广播（最多 60 字）" maxlength="60">
+          <input class="input-line" id="broadcastInput" placeholder="向全服发送广播（最多 200 字，新广播会覆盖横幅）" maxlength="200">
+          <select class="input-line" id="broadcastMinutes" style="max-width:170px">
+            <option value="30">持续 30 分钟</option>
+            <option value="60" selected>持续 1 小时</option>
+            <option value="180">持续 3 小时</option>
+            <option value="360">持续 6 小时</option>
+            <option value="720">持续 12 小时</option>
+            <option value="1440">持续 24 小时</option>
+          </select>
           <button class="btn-sm" id="broadcastSend">发布广播</button>
         </div>
         <div class="member-table panel-cut">
@@ -7033,14 +7125,32 @@
         toast(banned ? `已移出系统：${username}` : `已恢复访问：${username}`);
       };
     });
-    container.querySelector("#broadcastSend").onclick = () => {
+    container.querySelector("#broadcastSend").onclick = async () => {
       const input = container.querySelector("#broadcastInput");
+      const sel = container.querySelector("#broadcastMinutes");
       const text = input.value.trim();
       if (!text) { toast("广播内容不能为空"); return; }
-      s.forum.unshift({ id: "f" + Date.now(), author: "议会广播", title: "【全服广播】", body: text, time: "刚刚", likes: 0, liked: false, section: "notice", authorRole: "admin", createdAt: Date.now(), comments: [], views: 0, essence: false });
-      pushSystemActivity(`管理者发布全服广播：${text}`, "broadcast");
-      saveState(); input.value = "";
-      toast("广播已发布至论坛");
+      const minutes = Number(sel && sel.value) || 60;
+      if (window.SDJCloud && window.SDJCloud.enabled()) {
+        const r = await window.SDJCloud.publishBroadcast(text, minutes);
+        if (!r.ok) { toast(r.error || "广播发送失败"); return; }
+        input.value = "";
+        await syncWorldFromCloud(true);
+        renderBroadcastBanner();
+        toast(`广播已发布，持续 ${minutes} 分钟`);
+        return;
+      }
+      const s2 = loadState();
+      s2.broadcasts = s2.broadcasts || [];
+      s2.broadcasts.unshift({
+        id: "b" + Date.now(), text, at: Date.now(),
+        by: session ? session.displayName : "管理者",
+        minutes, expiresAt: Date.now() + minutes * 60000
+      });
+      saveState();
+      input.value = "";
+      renderBroadcastBanner();
+      toast(`广播已发布，持续 ${minutes} 分钟`);
     };
   }
 

@@ -1273,3 +1273,21 @@
     .card-role-hint { margin-left: 0; width: 100%; }
   }
 
+
+/* ---------- 全服广播（顶部横板 + 历史） ---------- */
+.broadcast-strip{display:flex;align-items:center;gap:12px;padding:10px 14px;margin-bottom:14px;border-radius:12px;
+  background:linear-gradient(90deg,rgba(122,10,16,.55),rgba(40,0,0,.35));border:1px solid rgba(255,70,70,.35);
+  box-shadow:0 0 18px rgba(120,0,0,.18);overflow:hidden}
+.broadcast-strip .bs-label{flex:0 0 auto;color:#ff6b6b;font-weight:700;letter-spacing:2px;font-size:13px;
+  padding-right:10px;border-right:1px solid rgba(255,255,255,.15)}
+.broadcast-strip .bs-viewport{flex:1 1 auto;overflow:hidden;white-space:nowrap}
+.broadcast-strip .bs-track{display:inline-block;padding-left:100%;animation:bs-marquee 20s linear infinite;color:#eee;font-size:14px}
+.broadcast-strip:hover .bs-track{animation-play-state:paused}
+@keyframes bs-marquee{from{transform:translateX(0)}to{transform:translateX(-100%)}}
+.broadcast-strip .bs-time{flex:0 0 auto;color:#b9a3a3;font-size:12px}
+.broadcast-strip .bs-history{flex:0 0 auto;font-size:12px}
+.bs-list{max-height:52vh;overflow:auto;margin-top:10px;display:flex;flex-direction:column;gap:8px}
+.bs-row{padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)}
+.bs-row-text{color:#eee;line-height:1.6}
+.bs-row-meta{margin-top:4px;color:#9a8f8f;font-size:12px}
+@media (max-width:720px){.broadcast-strip{flex-wrap:wrap}.broadcast-strip .bs-time{order:3}}

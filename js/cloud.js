@@ -209,7 +209,9 @@
 
   const postRow = (r) => ({
     id: r.id, author: r.author, title: r.title, body: r.body,
-    time: relTime(r.created_at), likes: r.likes || 0, liked: false, pinned: !!r.pinned
+    time: relTime(r.created_at), likes: r.likes || 0, liked: false, pinned: !!r.pinned,
+    comments: Array.isArray(r.comments) ? r.comments : [],
+    likedBy: Array.isArray(r.liked_by) ? r.liked_by.map(x => x && x.username).filter(Boolean) : []
   });
   const approvalRow = (r) => ({
     id: r.id, name: r.name, role: r.role, type: r.type,
@@ -273,18 +275,15 @@
     } catch (e) { return null; }
   }
 
+  // 服务端合并：消息按 id 取并集，避免两台设备各自整份覆盖对方的消息
   async function saveSocialSnapshot(payload) {
     if (!enabled()) return false;
-    try {
-      const c = await ensureClient();
-      const { error } = await c.from("social_state").upsert({
-        id: 1,
-        data: payload,
-        updated_at: new Date().toISOString()
-      });
-      if (error) throw error;
-      return true;
-    } catch (e) { console.warn("[云端] 社交快照保存失败：", e); return false; }
+    const r = await rpc("social_merge", { p_data: payload });
+    if (!r.ok) {
+      console.warn("[云端] 社交合并失败：", r.error);
+      return false;
+    }
+    return true;
   }
 
   // 成员列表（含封禁 / 最高管理者标记），成员管理页使用
@@ -401,6 +400,12 @@
   const saveMission = (mission) => rpc("mission_save", { p_mission: mission });
   const deleteMission = (missionId) => rpc("mission_delete", { p_id: missionId });
   const worldSweep = () => rpc("world_sweep", {});
+  const publishBroadcast = (text, minutes) =>
+    rpc("broadcast_publish", { p_text: text, p_minutes: Number(minutes) || 60 });
+  const addForumComment = (postId, text) =>
+    rpc("forum_comment_add", { p_post_id: postId, p_text: text });
+  const toggleForumLike = (postId) =>
+    rpc("forum_toggle_like", { p_post_id: postId });
   const banMember = (username, banned, note) =>
     rpc("member_ban", { p_username: username, p_banned: !!banned, p_note: note || "" });
   const isOwner = () => !!(profile && profile.owner);
@@ -458,6 +463,9 @@
     saveMission,
     deleteMission,
     worldSweep,
+    publishBroadcast,
+    addForumComment,
+    toggleForumLike,
     banMember,
     isOwner,
     submitRegistration,
