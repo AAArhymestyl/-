@@ -2452,6 +2452,141 @@ $$;
 revoke all on function public.register_bypass_report(text) from public;
 grant execute on function public.register_bypass_report(text) to anon, authenticated;
 
+-- =========================================================
+-- 17. NPC 好友跨设备 / 论坛浏览数 / 图片与位置
+-- =========================================================
+
+-- 17.1 论坛新字段
+alter table public.forum_posts add column if not exists images jsonb not null default '[]'::jsonb;
+alter table public.forum_posts add column if not exists location jsonb;
+alter table public.forum_posts add column if not exists viewed_by jsonb not null default '[]'::jsonb;
+
+-- 17.2 浏览数：同一账号对同一帖子只计一次，服务端原子累加
+create or replace function public.forum_view_add(p_post_id uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_me text;
+  v_viewed jsonb;
+  v_views int;
+begin
+  if auth.uid() is null then return jsonb_build_object('ok', false, 'error', '请先登录'); end if;
+  if public.is_banned() then return jsonb_build_object('ok', false, 'error', '该账号已被移出系统'); end if;
+  select username into v_me from public.profiles where id = auth.uid();
+  if v_me is null then return jsonb_build_object('ok', false, 'error', '缺少成员档案'); end if;
+
+  select coalesce(viewed_by, '[]'::jsonb) into v_viewed
+    from public.forum_posts where id = p_post_id for update;
+  if not found then return jsonb_build_object('ok', false, 'error', '帖子不存在'); end if;
+
+  if not exists (
+    select 1 from jsonb_array_elements_text(v_viewed) x where x = v_me
+  ) then
+    v_viewed := v_viewed || jsonb_build_array(to_jsonb(v_me));
+  end if;
+  v_views := jsonb_array_length(v_viewed);
+
+  update public.forum_posts
+     set viewed_by = v_viewed, views = v_views
+   where id = p_post_id;
+
+  return jsonb_build_object('ok', true, 'views', v_views);
+end;
+$$;
+
+-- 17.3 NPC 好友跨设备（NPC 无 Auth 档案，因此单独存于 social_state.social.npcFriends）
+create or replace function public.social_npc_friend_add(p_npc text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_me text;
+  v_npc text := btrim(coalesce(p_npc, ''));
+  v_data jsonb;
+  v_social jsonb;
+  v_map jsonb;
+  v_arr jsonb;
+  v_now bigint := (extract(epoch from clock_timestamp()) * 1000)::bigint;
+begin
+  if auth.uid() is null then return jsonb_build_object('ok', false, 'error', '请先登录'); end if;
+  if public.is_banned() then return jsonb_build_object('ok', false, 'error', '该账号已被移出系统'); end if;
+  select username into v_me from public.profiles where id = auth.uid();
+  if v_me is null then return jsonb_build_object('ok', false, 'error', '缺少成员档案'); end if;
+  if v_npc not like 'npc\_%' then return jsonb_build_object('ok', false, 'error', '不是有效的 NPC'); end if;
+
+  select coalesce(data, '{}'::jsonb) into v_data from public.social_state where id = 1 for update;
+  v_social := coalesce(v_data->'social', '{}'::jsonb);
+  v_map := coalesce(v_social->'npcFriends', '{}'::jsonb);
+  v_arr := coalesce(v_map->v_me, '[]'::jsonb);
+  if not exists (select 1 from jsonb_array_elements_text(v_arr) x where x = v_npc) then
+    v_arr := v_arr || jsonb_build_array(to_jsonb(v_npc));
+  end if;
+  v_map := jsonb_set(v_map, array[v_me], v_arr, true);
+  v_social := jsonb_set(v_social, array['npcFriends'], v_map, true);
+  v_data := jsonb_set(v_data, array['social'], v_social, true);
+  v_data := jsonb_set(v_data, array['updatedAt'], to_jsonb(v_now), true);
+  update public.social_state set data = v_data, updated_at = now() where id = 1;
+  return jsonb_build_object('ok', true);
+end;
+$$;
+
+create or replace function public.social_npc_friend_remove(p_npc text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_me text;
+  v_npc text := btrim(coalesce(p_npc, ''));
+  v_data jsonb;
+  v_social jsonb;
+  v_map jsonb;
+  v_arr jsonb;
+  v_now bigint := (extract(epoch from clock_timestamp()) * 1000)::bigint;
+begin
+  if auth.uid() is null then return jsonb_build_object('ok', false, 'error', '请先登录'); end if;
+  if public.is_banned() then return jsonb_build_object('ok', false, 'error', '该账号已被移出系统'); end if;
+  select username into v_me from public.profiles where id = auth.uid();
+  if v_me is null then return jsonb_build_object('ok', false, 'error', '缺少成员档案'); end if;
+
+  select coalesce(data, '{}'::jsonb) into v_data from public.social_state where id = 1 for update;
+  v_social := coalesce(v_data->'social', '{}'::jsonb);
+  v_map := coalesce(v_social->'npcFriends', '{}'::jsonb);
+  select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) into v_arr
+    from jsonb_array_elements_text(coalesce(v_map->v_me, '[]'::jsonb)) x where x <> v_npc;
+  v_map := jsonb_set(v_map, array[v_me], v_arr, true);
+  v_social := jsonb_set(v_social, array['npcFriends'], v_map, true);
+  v_data := jsonb_set(v_data, array['social'], v_social, true);
+  v_data := jsonb_set(v_data, array['updatedAt'], to_jsonb(v_now), true);
+  update public.social_state set data = v_data, updated_at = now() where id = 1;
+  return jsonb_build_object('ok', true);
+end;
+$$;
+
+-- 17.4 论坛图片 Storage 桶与策略
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('forum-images', 'forum-images', true, 5242880,
+        array['image/png','image/jpeg','image/webp','image/gif'])
+on conflict (id) do update
+  set public = excluded.public,
+      file_size_limit = excluded.file_size_limit,
+      allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "forum images read" on storage.objects;
+create policy "forum images read"
+  on storage.objects for select using (bucket_id = 'forum-images');
+
+drop policy if exists "forum images upload" on storage.objects;
+create policy "forum images upload"
+  on storage.objects for insert to authenticated
+  with check (bucket_id = 'forum-images' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "forum images delete" on storage.objects;
+create policy "forum images delete"
+  on storage.objects for delete to authenticated
+  using (bucket_id = 'forum-images' and ((storage.foldername(name))[1] = auth.uid()::text or public.is_admin()));
+
+revoke all on function public.forum_view_add(uuid) from public;
+revoke all on function public.social_npc_friend_add(text) from public;
+revoke all on function public.social_npc_friend_remove(text) from public;
+grant execute on function public.forum_view_add(uuid) to authenticated;
+grant execute on function public.social_npc_friend_add(text) to authenticated;
+grant execute on function public.social_npc_friend_remove(text) to authenticated;
+
 -- 12.7 权限
 revoke all on function public.member_ban(text, boolean, text) from public;
 revoke all on function public.mission_save(jsonb) from public;
