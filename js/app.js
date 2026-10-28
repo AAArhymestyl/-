@@ -3043,6 +3043,8 @@
       try {
         const profiles = await window.SDJCloud.listProfiles();
         memberCloudAt = Date.now();
+        // 请求期间用户可能已经切走页面或开始输入，必须在落地前重新校验
+        if (!host.isConnected || currentMenuId !== "member" || viewRole !== "admin" || memberPageIsEditing()) return;
         if (profiles) {
           const pfp = profilesFingerprint(profiles);
           if (pfp !== memberCloudFp) {
