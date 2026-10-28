@@ -144,20 +144,41 @@
   }
 
   // 启动时恢复登录态与全服数据
+  // 返回 { profile, world } 正常；{ noSession: true } 会话已失效；{ error } 网络异常
   async function boot() {
     if (!enabled()) return null;
     try {
       const session = await getSession();
-      if (!session) return null;
+      if (!session) return { noSession: true };
       let p = null;
       try { p = await fetchProfile(session.user.id); } catch (e) { p = null; }
-      if (!p) return null;
+      if (!p) return { noSession: true };
       profile = p;
       const world = await loadWorld();
       return { profile: p, world };
     } catch (e) {
       console.warn("[云端] 启动失败：", e);
-      return null;
+      return { error: String(e.message || e) };
+    }
+  }
+
+  // 会话是否仍然有效（用于长时间挂机后检测 JWT 过期/被撤销）
+  async function hasSession() {
+    if (!enabled()) return true;
+    try {
+      const c = await ensureClient();
+      const { data } = await c.auth.getSession();
+      if (!data || !data.session) return false;
+      const { data: u, error } = await c.auth.getUser();
+      if (error) {
+        const msg = String(error.message || "");
+        if (/fetch|network|timeout|abort/i.test(msg)) return true;  // 网络问题不算掉线
+        return false;
+      }
+      return !!(u && u.user);
+    } catch (e) {
+      const msg = String(e.message || e);
+      return /fetch|network|timeout|abort/i.test(msg);
     }
   }
 
@@ -414,6 +435,7 @@
     rpc,
     watch,
     unsubscribe,
+    hasSession,
     getProfile: () => profile
   };
 })();

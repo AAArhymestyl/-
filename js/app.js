@@ -1172,10 +1172,22 @@
     renderContent();
     startWorldCloudWatch();
     startSocialCloudWatch();
+
+    // 会话守护：长时间挂机后 JWT 可能过期，此时界面看起来还在线，写入却全部失败
+    const sessionGuard = setInterval(async () => {
+      if (!window.SDJCloud || !window.SDJCloud.enabled()) return;
+      if (document.hidden) return;
+      const ok = await window.SDJCloud.hasSession();
+      if (ok) return;
+      clearSession();
+      toast("云端登录已过期，请重新登录");
+      navigate("/login");
+    }, 60000);
     
     window._cleanupMainApp = () => { 
       clearInterval(clockInterval); 
       clearInterval(sweepInterval);
+      clearInterval(sessionGuard);
       stopDashboardClock();
       stopRealtime();
       stopWorldCloudWatch();
@@ -7155,18 +7167,35 @@
   syncAccountMembers();
   render();
 
+  const IS_CLOUD_BOOT = !!(window.SDJCloud && window.SDJCloud.enabled());
   const existingSession = getSession();
   showLoadingScreen({
     onComplete: () => {
-      if (existingSession && getPath() === "/login") {
+      // 云端模式必须等 boot 校验会话后再决定去向，否则会话失效时会来回跳转
+      if (!IS_CLOUD_BOOT && existingSession && getPath() === "/login") {
         navigate("/app");
       }
     }
   });
 
   // 云端模式：恢复 Supabase 登录态与全服数据（未配置时整段跳过）
-  if (window.SDJCloud && window.SDJCloud.enabled()) {
+  if (IS_CLOUD_BOOT) {
     window.SDJCloud.boot().then(async res => {
+      if (res && res.noSession) {
+        // 页面里还记着身份，但云端会话已经失效：继续留在主界面会让所有写入静默失败
+        if (existingSession) {
+          clearSession();
+          if (getPath() !== "/login") {
+            toast("云端登录已过期，请重新登录");
+            setTimeout(() => navigate("/login"), 900);
+          }
+        }
+        return;
+      }
+      if (res && res.error) {
+        toast("云端连接异常：" + res.error);
+        return;
+      }
       if (!res || !res.profile) return;
       const p = res.profile;
       setSession({ role: p.role, displayName: p.display_name, username: p.username, ts: Date.now(), auto: true });
