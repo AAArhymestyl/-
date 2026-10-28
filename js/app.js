@@ -4984,6 +4984,8 @@
           const cur = loadState().forum.find(x => x.id === postId);
           if (cur) { cur.views = Number(r.views) || cur.views || 0; saveState(); }
           if (canRedraw()) draw();
+        } else {
+          viewRecorded = false; // 网络失败时允许下次进入重试
         }
         return;
       }
@@ -5012,8 +5014,16 @@
     let detailTimer = null;
     async function pullDetail() {
       if (detailClosed || !cloud) return;
-      const row = await window.SDJCloud.getForumPost(postId);
-      if (!row || detailClosed) return;
+      const res = await window.SDJCloud.getForumPost(postId);
+      if (!res || !res.ok || detailClosed) return;
+      if (!res.post) {
+        detailClosed = true;
+        toast("该帖子已被删除");
+        pendingMenu = "forum";
+        navigate("/app");
+        return;
+      }
+      const row = res.post;
       const st = loadState();
       const prev = st.forum.find(x => x.id === postId);
       if (!prev) return;
