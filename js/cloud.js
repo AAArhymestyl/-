@@ -193,7 +193,16 @@
     if (/Invalid login credentials/i.test(m)) return "账号或密码错误。";
     if (/User already registered/i.test(m)) return "该账号已注册。";
     if (/Email not confirmed/i.test(m)) return "邮箱尚未确认：请在 Supabase 关闭 Email Confirm。";
-    if (/Failed to fetch/i.test(m)) return "无法连接云端，请检查网络或 Supabase 配置。";
+    if (/Failed to fetch|Load failed|NetworkError|net::|ERR_/i.test(m)) {
+      return "无法连接云端服务（网络被屏蔽 / 代理未开启 / Supabase 项目休眠）。请切换网络后重试。";
+    }
+    if (/请求超时/.test(m)) {
+      return "云端请求超时：可能是网络不稳定或 Supabase 项目已休眠，请稍后重试。";
+    }
+    if (/Could not find the function|schema cache/i.test(m)) {
+      return "云端数据库缺少最新函数：请在 Supabase SQL Editor 重新执行 supabase/schema.sql。";
+    }
+    if (/permission denied|JWT|not authorized/i.test(m)) return "没有云端权限，请重新登录后再试。";
     return m || "云端请求失败。";
   }
 
@@ -210,6 +219,10 @@
   const postRow = (r) => ({
     id: r.id, author: r.author, title: r.title, body: r.body,
     time: relTime(r.created_at), likes: r.likes || 0, liked: false, pinned: !!r.pinned,
+    // section / author_role / views / essence 是跨设备保留版块与加精状态的关键字段
+    section: r.section || "", authorRole: r.author_role || "",
+    views: Number(r.views) || 0, essence: !!r.essence,
+    createdAt: r.created_at ? new Date(r.created_at).getTime() : 0,
     comments: Array.isArray(r.comments) ? r.comments : [],
     likedBy: Array.isArray(r.liked_by) ? r.liked_by.map(x => x && x.username).filter(Boolean) : []
   });
@@ -229,18 +242,35 @@
     } catch (e) { console.warn("[云端] 读取论坛失败：", e); return null; }
   }
 
-  async function addForumPost({ author, title, body }) {
+  async function addForumPost({ author, title, body, section, authorRole }) {
     if (!enabled()) return null;
     try {
       const c = await ensureClient();
       const { data: sess } = await c.auth.getSession();
       const uid = sess && sess.session ? sess.session.user.id : null;
-      const { data, error } = await c.from("forum_posts")
-        .insert({ author, title, body, author_id: uid })
-        .select().single();
-      if (error) throw error;
-      return postRow(data);
+      const payload = { author, title, body, author_id: uid };
+      // 新库带 section / author_role 列；老库未执行最新 schema 时自动退回基础字段
+      const extended = Object.assign({}, payload);
+      if (section) extended.section = section;
+      if (authorRole) extended.author_role = authorRole;
+      let res = await c.from("forum_posts").insert(extended).select().single();
+      if (res.error && /column .* does not exist/i.test(res.error.message || "")) {
+        res = await c.from("forum_posts").insert(payload).select().single();
+      }
+      if (res.error) throw res.error;
+      return postRow(res.data);
     } catch (e) { console.warn("[云端] 发帖失败：", e); return null; }
+  }
+
+  // 加精 / 取消加精：此前只改本地，刷新后丢失
+  async function setForumEssence(id, essence) {
+    if (!enabled()) return false;
+    try {
+      const c = await ensureClient();
+      const { error } = await c.from("forum_posts").update({ essence: !!essence }).eq("id", id);
+      if (error) throw error;
+      return true;
+    } catch (e) { console.warn("[云端] 加精失败：", e); return false; }
   }
 
   async function setForumLikes(id, likes) {
@@ -283,7 +313,8 @@
       console.warn("[云端] 社交合并失败：", r.error);
       return false;
     }
-    return true;
+    // 用服务端时间戳回写，避免本机时钟偏快导致后续 pull 永远认为「没有新数据」
+    return { ok: true, updatedAt: Number(r.updatedAt) || Number(payload.updatedAt) || Date.now() };
   }
 
   // 成员列表（含封禁 / 最高管理者标记），成员管理页使用
@@ -380,11 +411,19 @@
   }
 
   // ---------------- 玩家动作 RPC（跨设备写入 world_state） ----------------
+  const RPC_TIMEOUT_MS = 15000;
+  function withTimeout(promise, ms) {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("请求超时（" + Math.round(ms / 1000) + " 秒）")), ms))
+    ]);
+  }
+
   async function rpc(name, params) {
     if (!enabled()) return { ok: false, error: "云端未配置" };
     try {
       const c = await ensureClient();
-      const { data, error } = await c.rpc(name, params || {});
+      const { data, error } = await withTimeout(c.rpc(name, params || {}), RPC_TIMEOUT_MS);
       if (error) return { ok: false, error: translate(error.message) };
       return Object.assign({ ok: true }, data || {});
     } catch (e) {
@@ -410,6 +449,8 @@
     rpc("social_friend_request", { p_to: to, p_message: message || "" });
   const friendRespond = (id, accept, reason) =>
     rpc("social_friend_respond", { p_id: id, p_accept: !!accept, p_reason: reason || "" });
+  const groupCreate = (name, targets) =>
+    rpc("social_group_create", { p_name: name || "", p_targets: targets || [] });
   const groupInvite = (groupId, targets) =>
     rpc("social_group_invite", { p_group_id: groupId, p_targets: targets || [] });
   const groupApply = (groupId, message) =>
@@ -417,6 +458,19 @@
   const groupRespond = (id, accept, reason) =>
     rpc("social_group_respond", { p_id: id, p_accept: !!accept, p_reason: reason || "" });
   const groupQuit = (groupId) => rpc("social_group_quit", { p_group_id: groupId });
+  // 群设置类操作：服务端行锁内改单个字段，避免整份快照合并互相覆盖（最后写入者生效）
+  const groupUpdate = (groupId, field, value) =>
+    rpc("social_group_update", { p_group_id: groupId, p_field: field, p_value: value });
+  const groupPolicy = (groupId, key, value) =>
+    rpc("social_group_policy", { p_group_id: groupId, p_key: key, p_value: value });
+  const groupAdmin = (groupId, target, on) =>
+    rpc("social_group_admin", { p_group_id: groupId, p_target: target, p_on: !!on });
+  const groupRemoveMember = (groupId, target) =>
+    rpc("social_group_remove_member", { p_group_id: groupId, p_target: target });
+  const groupDissolve = (groupId) =>
+    rpc("social_group_dissolve", { p_group_id: groupId });
+  const friendRemove = (friend) =>
+    rpc("social_friend_remove", { p_friend: friend });
   const banMember = (username, banned, note) =>
     rpc("member_ban", { p_username: username, p_banned: !!banned, p_note: note || "" });
   const isOwner = () => !!(profile && profile.owner);
@@ -424,6 +478,8 @@
     rpc("registration_submit", { p_username: username, p_display_name: displayName, p_role: role });
   const registrationStatus = (username) =>
     rpc("registration_status", { p_username: username });
+  const reportRegisterBypass = (username) =>
+    rpc("register_bypass_report", { p_username: username || "" });
   // 管理者邀请码（审批制）：申请由服务端校验邀请码，前端拿不到码
   const adminRequest = (username, displayName, invite) =>
     rpc("admin_request_submit", { p_username: username, p_display_name: displayName, p_invite: invite });
@@ -461,6 +517,7 @@
     saveMap,
     listForum,
     addForumPost,
+    setForumEssence,
     setForumLikes,
     removeForumPost,
     listProfiles,
@@ -479,14 +536,22 @@
     toggleForumLike,
     friendRequest,
     friendRespond,
+    groupCreate,
     groupInvite,
     groupApply,
     groupRespond,
     groupQuit,
+    groupUpdate,
+    groupPolicy,
+    groupAdmin,
+    groupRemoveMember,
+    groupDissolve,
+    friendRemove,
     banMember,
     isOwner,
     submitRegistration,
     registrationStatus,
+    reportRegisterBypass,
     adminRequest,
     adminClaim,
     signUpNoProfile,
