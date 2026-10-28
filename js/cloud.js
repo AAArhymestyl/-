@@ -402,10 +402,21 @@
   const worldSweep = () => rpc("world_sweep", {});
   const publishBroadcast = (text, minutes) =>
     rpc("broadcast_publish", { p_text: text, p_minutes: Number(minutes) || 60 });
-  const addForumComment = (postId, text) =>
-    rpc("forum_comment_add", { p_post_id: postId, p_text: text });
+  const addForumComment = (postId, text, parentId) =>
+    rpc("forum_comment_add", { p_post_id: postId, p_text: text, p_parent_id: parentId || "" });
   const toggleForumLike = (postId) =>
     rpc("forum_toggle_like", { p_post_id: postId });
+  const friendRequest = (to, message) =>
+    rpc("social_friend_request", { p_to: to, p_message: message || "" });
+  const friendRespond = (id, accept, reason) =>
+    rpc("social_friend_respond", { p_id: id, p_accept: !!accept, p_reason: reason || "" });
+  const groupInvite = (groupId, targets) =>
+    rpc("social_group_invite", { p_group_id: groupId, p_targets: targets || [] });
+  const groupApply = (groupId, message) =>
+    rpc("social_group_apply", { p_group_id: groupId, p_message: message || "" });
+  const groupRespond = (id, accept, reason) =>
+    rpc("social_group_respond", { p_id: id, p_accept: !!accept, p_reason: reason || "" });
+  const groupQuit = (groupId) => rpc("social_group_quit", { p_group_id: groupId });
   const banMember = (username, banned, note) =>
     rpc("member_ban", { p_username: username, p_banned: !!banned, p_note: note || "" });
   const isOwner = () => !!(profile && profile.owner);
@@ -466,6 +477,12 @@
     publishBroadcast,
     addForumComment,
     toggleForumLike,
+    friendRequest,
+    friendRespond,
+    groupInvite,
+    groupApply,
+    groupRespond,
+    groupQuit,
     banMember,
     isOwner,
     submitRegistration,

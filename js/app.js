@@ -4732,9 +4732,7 @@
         const text = input.value.trim();
         if (!text) { toast("评论内容不能为空"); return; }
         if (cloud && /^[0-9a-f-]{36}$/i.test(String(postId))) {
-          const target = replyTo ? (comments.find(x => x.id === replyTo) || null) : null;
-          const payload = target ? `@${target.author} ${text}` : text;
-          const r = await window.SDJCloud.addForumComment(postId, payload);
+          const r = await window.SDJCloud.addForumComment(postId, text, replyTo || "");
           if (!r.ok) { toast(r.error || "评论失败"); return; }
           const cur2 = loadState().forum.find(x => x.id === postId);
           if (cur2) { cur2.comments = r.comments || []; saveState(); }
@@ -5100,7 +5098,14 @@
     return loadSocial().friendRequests.find(r => r.from === a && r.to === b && r.status === "pending") || null;
   }
 
-  function sendFriendRequest(from, to, message) {
+  async function sendFriendRequest(from, to, message) {
+    if (window.SDJCloud && window.SDJCloud.enabled() && !isNpcUser(to)) {
+      const r = await window.SDJCloud.friendRequest(to, message);
+      if (!r.ok) return r;
+      await pullSocialCloud();
+      emitSocial();
+      return { ok: true, request: r.request };
+    }
     const s = loadSocial();
     if (!from || !to) return { ok: false, error: "参数错误" };
     if (from === to) return { ok: false, error: "不能添加自己为好友" };
@@ -5124,9 +5129,17 @@
     return { ok: true, request: req };
   }
 
-  function respondFriendRequest(id, accept, reason) {
+  async function respondFriendRequest(id, accept, reason) {
     const s = loadSocial();
     const req = s.friendRequests.find(r => r.id === id);
+    if (req && window.SDJCloud && window.SDJCloud.enabled() && !isNpcUser(req.from)) {
+      const rc = await window.SDJCloud.friendRespond(id, accept, reason);
+      if (!rc.ok) return rc;
+      await pullSocialCloud();
+      if (accept) pushSystemMsg(convOfFriend(req.from, req.to), "你们已成为好友，开始对话吧");
+      emitSocial();
+      return { ok: true };
+    }
     if (!req || req.status !== "pending") return { ok: false, error: "该申请已处理或不存在" };
     req.status = accept ? "accepted" : "rejected";
     req.handledAt = Date.now();
@@ -5275,7 +5288,16 @@
     if (g.status === "inviting") checkGroupForming(g);
   }
 
-  function inviteToGroup(gid, byUser, targets) {
+  async function inviteToGroup(gid, byUser, targets) {
+    if (window.SDJCloud && window.SDJCloud.enabled()) {
+      const list = Array.from(new Set((targets || []).filter(Boolean)));
+      if (!list.length) return { ok: false, error: "请选择要邀请的好友" };
+      const r = await window.SDJCloud.groupInvite(gid, list);
+      if (!r.ok) return r;
+      await pullSocialCloud();
+      emitSocial();
+      return { ok: true };
+    }
     const g = groupById(gid);
     if (!g) return { ok: false, error: "群聊不存在" };
     if (!socialCan("invite", g, byUser)) return { ok: false, error: "无权邀请成员" };
@@ -5299,7 +5321,14 @@
     return { ok: true };
   }
 
-  function applyToGroup(gid, user, message) {
+  async function applyToGroup(gid, user, message) {
+    if (window.SDJCloud && window.SDJCloud.enabled()) {
+      const r = await window.SDJCloud.groupApply(gid, message);
+      if (!r.ok) return r;
+      await pullSocialCloud();
+      emitSocial();
+      return { ok: true, direct: !!r.direct };
+    }
     const g = groupById(gid);
     if (!g || g.status !== "active") return { ok: false, error: "该群聊不存在或已解散" };
     if (!g.searchable) return { ok: false, error: "未找到该群聊" };
@@ -5327,7 +5356,14 @@
     return { ok: true, request: req };
   }
 
-  function respondGroupRequest(id, accept, byUser, reason) {
+  async function respondGroupRequest(id, accept, byUser, reason) {
+    if (window.SDJCloud && window.SDJCloud.enabled()) {
+      const r = await window.SDJCloud.groupRespond(id, accept, reason);
+      if (!r.ok) return r;
+      await pullSocialCloud();
+      emitSocial();
+      return { ok: true };
+    }
     const s = loadSocial();
     const req = s.groupRequests.find(r => r.id === id);
     if (!req || req.status !== "pending") return { ok: false, error: "该申请已处理或不存在" };
@@ -5384,7 +5420,14 @@
     return { ok: true };
   }
 
-  function quitGroup(gid, user) {
+  async function quitGroup(gid, user) {
+    if (window.SDJCloud && window.SDJCloud.enabled()) {
+      const r = await window.SDJCloud.groupQuit(gid);
+      if (!r.ok) return r;
+      await pullSocialCloud();
+      emitSocial();
+      return { ok: true };
+    }
     const g = groupById(gid);
     if (!g) return { ok: false, error: "群聊不存在" };
     if (!socialCan("quit", g, user)) return { ok: false, error: "群主不可退出，只能解散群聊" };
@@ -6481,7 +6524,7 @@
     if (m) m.classList.remove("show");
   }
 
-  function onSocialClick(e) {
+  async function onSocialClick(e) {
     const btn = e.target.closest("[data-sact]");
     if (!btn) { closePlusMenu(); return; }
     const act = btn.dataset.sact;
@@ -6603,7 +6646,7 @@
       case "picker-submit": {
         if (socialView.pickMode === "invite") {
           const gid = socialView.groupId;
-          const r = inviteToGroup(gid, me, socialView.picked);
+          const r = await inviteToGroup(gid, me, socialView.picked);
           if (!r.ok) { toast(r.error); return; }
           toast("邀请已发送，等待对方同意");
           socialView.view = "groupInfo";
@@ -6621,28 +6664,28 @@
         return;
       }
       case "accept-fr": {
-        const r = respondFriendRequest(btn.dataset.id, true);
+        const r = await respondFriendRequest(btn.dataset.id, true);
         if (!r.ok) { toast(r.error); return; }
         toast("已同意好友申请");
         emitSocial();
         return;
       }
       case "reject-fr": {
-        const r = respondFriendRequest(btn.dataset.id, false);
+        const r = await respondFriendRequest(btn.dataset.id, false);
         if (!r.ok) { toast(r.error); return; }
         toast("已拒绝好友申请");
         emitSocial();
         return;
       }
       case "accept-gr": {
-        const r = respondGroupRequest(btn.dataset.id, true, me);
+        const r = await respondGroupRequest(btn.dataset.id, true, me);
         if (!r.ok) { toast(r.error); return; }
         toast("已同意");
         emitSocial();
         return;
       }
       case "reject-gr": {
-        const r = respondGroupRequest(btn.dataset.id, false, me);
+        const r = await respondGroupRequest(btn.dataset.id, false, me);
         if (!r.ok) { toast(r.error); return; }
         toast("已拒绝");
         emitSocial();
@@ -6651,7 +6694,7 @@
       case "apply-group": {
         const gid = btn.dataset.gid;
         const g = groupById(gid);
-        const r = applyToGroup(gid, me, "");
+        const r = await applyToGroup(gid, me, "");
         if (!r.ok) { toast(r.error); return; }
         toast(r.direct ? "已加入群聊" : "已发送请求，等待对方群主/管理员同意");
         if (r.direct && g) {
@@ -6728,7 +6771,7 @@
         return;
       }
       case "quit-group": {
-        const r = quitGroup(btn.dataset.gid, me);
+        const r = await quitGroup(btn.dataset.gid, me);
         if (!r.ok) { toast(r.error); return; }
         toast("已退出群聊");
         socialView.view = "contacts";
@@ -6836,8 +6879,8 @@
         box.innerHTML = '<button class="btn-sm" disabled>已发送请求，等待对方同意</button>';
       } else if (incoming) {
         box.innerHTML = '<button class="btn-sm" data-x="ok">同意好友申请</button>';
-        box.querySelector('[data-x="ok"]').onclick = () => {
-          const r = respondFriendRequest(incoming.id, true);
+        box.querySelector('[data-x="ok"]').onclick = async () => {
+          const r = await respondFriendRequest(incoming.id, true);
           overlay.remove();
           if (!r.ok) { toast(r.error); return; }
           toast("已同意好友申请");
@@ -6845,8 +6888,8 @@
         };
       } else {
         box.innerHTML = '<button class="btn-sm" data-x="add">添加好友</button><button class="btn-sm ghost" data-x="close">关闭</button>';
-        box.querySelector('[data-x="add"]').onclick = () => {
-          const r = sendFriendRequest(me, username);
+        box.querySelector('[data-x="add"]').onclick = async () => {
+          const r = await sendFriendRequest(me, username);
           if (!r.ok) { toast(r.error); return; }
           overlay.remove();
           toast("已发送请求，等待对方同意");
