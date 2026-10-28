@@ -1,0 +1,538 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="cache-control" content="no-store">
+<title>神降计划·塔 · 回归测试台</title>
+<style>
+  html, body { margin: 0; background: #0b0b0d; color: #d8d8d8; font: 13px/1.65 Consolas, "Courier New", monospace; }
+  #root { padding: 18px 22px 40px; }
+  h1 { font-size: 16px; margin: 0 0 4px; color: #ff6b6b; }
+  .meta { color: #888; margin-bottom: 8px; }
+  h2 { font-size: 13px; margin: 14px 0 4px; padding-bottom: 3px; color: #ffb74d; border-bottom: 1px dashed #333; }
+  .row { white-space: pre-wrap; word-break: break-word; }
+  .pass { color: #66bb6a; }
+  .fail { color: #ff5252; font-weight: 700; }
+  .hint { color: #888; }
+  .banner { margin: 10px 0; padding: 8px 12px; border-left: 3px solid #ffb74d; background: #1a1410; }
+  .banner.fail { border-color: #ff5252; background: #201010; }
+  .banner.pass { border-color: #66bb6a; background: #0f1a10; }
+  iframe { display: block; width: 100%; height: 620px; margin-top: 16px; border: 1px solid #2a2a2a; background: #000; }
+</style>
+</head>
+<body>
+<div id="root"><h1>神降计划·塔 · 回归测试台</h1><div class="meta">正在准备被测页面…</div></div>
+<iframe id="fr" src="about:blank" title="app-under-test"></iframe>
+<script>
+(function () {
+  "use strict";
+
+  const root = document.getElementById("root");
+  const fr = document.getElementById("fr");
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // 新流程：点「提交任务内容」会弹出面板，需要填写内容后再确认
+  async function submitMissionViaDialog(win, text) {
+    const doc = win.document;
+    let ta = null;
+    for (let i = 0; i < 20 && !ta; i++) {
+      ta = doc.querySelector("#submitContent");
+      if (!ta) await sleep(100);
+    }
+    if (!ta) return false;
+    ta.value = text || "已完成（回归测试）";
+    ta.dispatchEvent(new win.Event("input", { bubbles: true }));
+    const btn = doc.querySelector("#submitConfirm");
+    if (!btn) return false;
+    btn.click();
+    await sleep(600);
+    return true;
+  }
+  const SESSION_KEY = "sdj_session";
+  const STATE_KEY = "sdj_state_v1";
+  const BACKUP_KEYS = ["sdj_state_v1", "sdj_social_v1", "sdj_social_msgs_v1", "sdj_session"];
+
+  const ACCOUNTS = {
+    admin: { username: "AAArhymestyl", displayName: "沙利叶", role: "admin" },
+    player: { username: "AAAwe", displayName: "月影", role: "player" },
+    contractor: { username: "AAAwer", displayName: "血月", role: "contractor" }
+  };
+
+  let passCount = 0;
+  let failCount = 0;
+  let backup = null;
+
+  function heading(text) {
+    const h = document.createElement("h2");
+    h.textContent = text;
+    root.appendChild(h);
+    h.scrollIntoView({ block: "nearest" });
+  }
+
+  function report(name, ok, extra) {
+    const row = document.createElement("div");
+    row.className = "row " + (ok ? "pass" : "fail");
+    row.textContent = (ok ? "PASS " : "FAIL ") + name + (extra != null && String(extra) !== "" ? "  ·  " + extra : "");
+    root.appendChild(row);
+    if (ok) passCount++; else failCount++;
+  }
+
+  function banner(text, cls) {
+    const b = document.createElement("div");
+    b.className = "banner " + (cls || "");
+    b.textContent = text;
+    root.appendChild(b);
+  }
+
+  function snapshot() {
+    backup = { local: {}, tab: sessionStorage.getItem(SESSION_KEY) };
+    BACKUP_KEYS.forEach((k) => { backup.local[k] = localStorage.getItem(k); });
+  }
+
+  function restore() {
+    if (!backup) return;
+    BACKUP_KEYS.forEach((k) => {
+      if (backup.local[k] == null) localStorage.removeItem(k);
+      else localStorage.setItem(k, backup.local[k]);
+    });
+    if (backup.tab == null) sessionStorage.removeItem(SESSION_KEY);
+    else sessionStorage.setItem(SESSION_KEY, backup.tab);
+  }
+
+  function readState() {
+    try { return JSON.parse(localStorage.getItem(STATE_KEY) || "{}"); } catch (e) { return {}; }
+  }
+
+  async function bootApp(role, path, readySelector) {
+    if (role) sessionStorage.setItem(SESSION_KEY, JSON.stringify(Object.assign({}, ACCOUNTS[role], { ts: Date.now() })));
+    else sessionStorage.removeItem(SESSION_KEY);
+
+    // 关键时序：先把上一份 iframe 文档卸载干净，再加载新地址。
+    // 否则旧页面的 load 事件可能被当成新页面的 onload，用例会跑在旧 DOM 上。
+    await new Promise((resolve) => {
+      let done = false;
+      const finish = () => { if (!done) { done = true; resolve(); } };
+      fr.onload = finish;
+      fr.src = "about:blank";
+      setTimeout(finish, 800);
+    });
+
+    const targetPath = path || "/app";
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        fr.onload = null;
+        reject(new Error("被测页面加载超时（" + targetPath + "）"));
+      }, 15000);
+      fr.onload = () => { clearTimeout(timer); fr.onload = null; resolve(); };
+      fr.src = "../index.html?local=1&t=" + Date.now() + "#" + targetPath;
+    });
+
+    const win = fr.contentWindow;
+    const need = readySelector || ".menu-item";
+    // 双重判定：document 已 complete + app.js 已发出该路由的首帧就绪标记
+    for (let i = 0; i < 120; i++) {
+      const doc = win.document;
+      const ready = win.SDJ_APP_READY;
+      if (doc && doc.readyState === "complete" && ready && ready.path === targetPath && doc.querySelector(need)) {
+        if (readySelector || win.SDJDashboard) return win;
+      }
+      await sleep(100);
+    }
+    throw new Error("应用未在 12 秒内完成渲染（" + targetPath + "）");
+  }
+
+  async function phase0() {
+    heading("阶段零 · 注册页：未发送审批请求直接注册累计 3 次告警");
+    const st = readState();
+    st.registerBypass = { count: 0, users: [] };
+    st.systemAlerts = [];
+    st.activityLog = [];
+    localStorage.setItem(STATE_KEY, JSON.stringify(st));
+
+    const win = await bootApp(null, "/register", ".panel-inner .btn-primary");
+    const doc = win.document;
+    await sleep(400);
+    const click = async () => {
+      const btn = doc.querySelector(".panel-inner .btn-primary");
+      if (!btn) throw new Error("注册页缺少完成注册按钮");
+      btn.click();
+      await sleep(350);
+    };
+
+    await click();
+    let cur = readState();
+    report("R1 第 1 次绕过仅累计次数、不告警", Number(cur.registerBypass.count) === 1 && (cur.systemAlerts || []).length === 0, "count=" + cur.registerBypass.count + " alerts=" + (cur.systemAlerts || []).length);
+    await click();
+    cur = readState();
+    report("R2 第 2 次绕过仍不告警", Number(cur.registerBypass.count) === 2 && (cur.systemAlerts || []).length === 0, "count=" + cur.registerBypass.count + " alerts=" + (cur.systemAlerts || []).length);
+    await click();
+    cur = readState();
+    const alert = (cur.systemAlerts || [])[0];
+    report("R3 第 3 次触发未读系统告警", Number(cur.registerBypass.count) === 3 && !!alert && alert.read === false, "count=" + cur.registerBypass.count + " alerts=" + (cur.systemAlerts || []).length);
+    report("R4 告警写入全服系统动态", (cur.activityLog || []).some((a) => a.scope === "system" && String(a.text).indexOf("未发送注册审批请求") >= 0), (cur.activityLog || []).length);
+    report("R5 管理员收到系统告警通知", (cur.notifications || []).some((n) => String(n.text || "").indexOf("系统告警") >= 0), (cur.notifications || []).length);
+    report("R6 注册页显示管理者入口（走邀请码审批）",
+      !!doc.querySelector('.seg-btn[data-role="admin"]') && win.SDJ_CONFIG && win.SDJ_CONFIG.allowAdminRegister !== false,
+      doc.querySelectorAll(".seg-btn").length + " 个入口");
+  }
+
+  function loadScript(win, file) {
+    return new Promise((resolve, reject) => {
+      const doc = win.document;
+      if (doc.querySelector('script[data-suite="' + file + '"]')) return resolve();
+      const s = doc.createElement("script");
+      s.src = "tests/" + file + "?t=" + Date.now();
+      s.dataset.suite = file;
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error("脚本加载失败：" + file));
+      doc.body.appendChild(s);
+    });
+  }
+
+  async function runSuite(win, apiName) {
+    const api = win[apiName];
+    if (!api || typeof api.run !== "function") throw new Error(apiName + " 未注册");
+    const res = await api.run();
+    const list = Array.isArray(res) ? res : (res && res.results) || [];
+    list.forEach((r) => report(r.name, r.pass, r.detail || r.extra || ""));
+  }
+
+  async function phase1() {
+    heading("阶段一 · 玩家月影：卡牌 / 好友回归");
+    const win = await bootApp("player");
+    await loadScript(win, "cards-regression.js");
+    await runSuite(win, "SDJCardsTest");
+    await loadScript(win, "friends-regression.js");
+    await runSuite(win, "SDJFriendsTest");
+  }
+
+  async function phase2() {
+    heading("阶段二 · 契约者血月：主控台 + 地图快捷入口 + 委托接取/提交");
+    const win = await bootApp("contractor");
+    await loadScript(win, "dashboard-regression.js");
+    await runSuite(win, "SDJDashboardTest");
+  }
+
+  async function phase2b() {
+    heading("阶段二B · 多名额接取：未满员保持开放，满员转进行中");
+    const st = readState();
+    st.missions = (st.missions || []).filter((m) => m.id !== "test_multi_mission" && m.id !== "test_map_mission");
+    st.missions.unshift({
+      id: "test_map_mission", title: "地图联调委托", level: "C", locationId: "area_b", loc: "B区",
+      desc: "用于验证地图侧多名额接取的临时委托。", reward: { type: "points", points: 15 },
+      slots: 2, acceptors: [], status: "available", deadline: null, createdAt: Date.now()
+    });
+    st.missions.unshift({
+      id: "test_multi_mission", title: "多人联调委托", level: "C", locationId: "area_a", loc: "A区",
+      desc: "用于验证多名额接取的临时委托。", reward: { type: "points", points: 20 },
+      slots: 2, acceptors: [], status: "available", deadline: null, createdAt: Date.now()
+    });
+    localStorage.setItem(STATE_KEY, JSON.stringify(st));
+
+    try {
+      /* 血月率先接取 */
+      let win = await bootApp("contractor");
+      let doc = win.document;
+      doc.querySelector('.menu-item[data-id="mission"]').click();
+      await sleep(700);
+      let btn = doc.querySelector('[data-accept="test_multi_mission"]');
+      report("M1 未满员委托可被首位成员接取", !!btn, btn ? btn.textContent.trim() : "missing");
+      if (btn) btn.click();
+      await sleep(800);
+      let m = (readState().missions || []).find((x) => x.id === "test_multi_mission");
+      report("M2 首位接取后仍为可接取（1/2）",
+        !!m && m.status === "available" && (m.acceptors || []).length === 1,
+        m ? m.status + "/" + (m.acceptors || []).length : "missing");
+      report("M3 接取人立即看到提交按钮", !!doc.querySelector('[data-submit="test_multi_mission"]'), "missing");
+
+      /* 地图侧接取同一规则 */
+      win.SDJ.acceptMission("B区", "地图联调委托");
+      await sleep(300);
+      let mm = (readState().missions || []).find((x) => x.id === "test_map_mission");
+      report("M4 地图接取未满员后仍保持可接取",
+        !!mm && mm.status === "available" && (mm.acceptors || []).length === 1,
+        mm ? mm.status + "/" + (mm.acceptors || []).length : "missing");
+      win.SDJ.acceptMission("B区", "地图联调委托");
+      await sleep(300);
+      mm = (readState().missions || []).find((x) => x.id === "test_map_mission");
+      report("M5 地图重复接取被拦截且不重复计数",
+        !!mm && (mm.acceptors || []).length === 1 && mm.status === "available",
+        mm ? mm.status + "/" + (mm.acceptors || []).length : "missing");
+
+      /* 月影随后接取，触发满员 */
+      win = await bootApp("player");
+      doc = win.document;
+      doc.querySelector('.menu-item[data-id="mission"]').click();
+      await sleep(700);
+      btn = doc.querySelector('[data-accept="test_multi_mission"]');
+      report("M6 未满员时其他成员仍可接取", !!btn, btn ? btn.textContent.trim() : "missing");
+      if (btn) btn.click();
+      await sleep(800);
+      m = (readState().missions || []).find((x) => x.id === "test_multi_mission");
+      report("M7 满员后自动转为进行中（2/2）",
+        !!m && m.status === "active" && (m.acceptors || []).length === 2,
+        m ? m.status + "/" + (m.acceptors || []).length : "missing");
+
+      /* 地图侧：第二位接取触发满员 */
+      win.SDJ.acceptMission("B区", "地图联调委托");
+      await sleep(300);
+      mm = (readState().missions || []).find((x) => x.id === "test_map_mission");
+      report("M8 地图侧满员后转为进行中",
+        !!mm && mm.status === "active" && (mm.acceptors || []).length === 2,
+        mm ? mm.status + "/" + (mm.acceptors || []).length : "missing");
+
+      /* 回到血月视角：满员后仍可提交 */
+      win = await bootApp("contractor");
+      doc = win.document;
+      doc.querySelector('.menu-item[data-id="mission"]').click();
+      await sleep(700);
+      const activeTab = Array.prototype.find.call(doc.querySelectorAll("[data-tab]"), (b) => b.dataset.tab === "active");
+      if (activeTab) { activeTab.click(); await sleep(500); }
+      report("M9 满员后进行中视图仍可提交", !!doc.querySelector('[data-submit="test_multi_mission"]'), "missing");
+
+      /* 两位接取人各自提交 */
+      let sub = doc.querySelector('[data-submit="test_multi_mission"]');
+      if (sub) { sub.click(); await sleep(400); await submitMissionViaDialog(win); }
+      await sleep(800);
+      let reps = (readState().missionReports || []).filter((r) => r.missionId === "test_multi_mission" && r.status === "pending");
+      report("M10 血月提交后生成独立申请",
+        reps.length === 1 && reps[0].applicant && reps[0].applicant.username === "AAAwer",
+        reps.length + "/" + (reps[0] && reps[0].applicant ? reps[0].applicant.username : "—"));
+      let m2 = (readState().missions || []).find((x) => x.id === "test_multi_mission");
+      report("M11 有人提交后委托进入待审批", !!m2 && m2.status === "review", m2 ? m2.status : "missing");
+
+      win = await bootApp("player");
+      doc = win.document;
+      doc.querySelector('.menu-item[data-id="mission"]').click();
+      await sleep(700);
+      const activeTab2 = Array.prototype.find.call(doc.querySelectorAll("[data-tab]"), (b) => b.dataset.tab === "active");
+      if (activeTab2) { activeTab2.click(); await sleep(500); }
+      sub = doc.querySelector('[data-submit="test_multi_mission"]');
+      report("M12 他人待审批时另一位接取人仍可提交", !!sub, sub ? sub.textContent.trim() : "missing");
+      if (sub) { sub.click(); await sleep(400); await submitMissionViaDialog(win); }
+      await sleep(800);
+      reps = (readState().missionReports || []).filter((r) => r.missionId === "test_multi_mission" && r.status === "pending");
+      report("M13 两位接取人各自持有待审批申请", reps.length === 2, reps.length);
+
+      win = await bootApp("contractor");
+      doc = win.document;
+      doc.querySelector('.menu-item[data-id="mission"]').click();
+      await sleep(700);
+      const activeTab3 = Array.prototype.find.call(doc.querySelectorAll("[data-tab]"), (b) => b.dataset.tab === "active");
+      if (activeTab3) { activeTab3.click(); await sleep(500); }
+      report("M14 已提交者不再显示提交按钮",
+        !doc.querySelector('[data-submit="test_multi_mission"]') && doc.querySelector(".mission-card .review-chip") !== null,
+        "no-submit");
+    } finally {
+      const s2 = readState();
+      s2.missions = (s2.missions || []).filter((x) => x.id !== "test_multi_mission" && x.id !== "test_map_mission");
+      s2.missionReports = (s2.missionReports || []).filter((r) => r.missionId !== "test_multi_mission" && r.missionId !== "test_map_mission");
+      localStorage.setItem(STATE_KEY, JSON.stringify(s2));
+    }
+  }
+
+  async function phase3() {
+    heading("阶段三 · 管理员沙利叶：逐人审批 / 独立结算");
+    const st = readState();
+    const now = Date.now();
+    st.missions = (st.missions || []).filter((m) => m.id !== "test_flow_mission");
+    st.missionReports = (st.missionReports || []).filter((r) => r.id !== "test_flow_report" && r.id !== "test_flow_report_2");
+    st.missions.unshift({
+      id: "test_flow_mission", title: "联调测试委托", level: "D", locationId: "area_a", loc: "A区",
+      desc: "用于验证逐人审批、独立结算与主控台计数的临时委托。",
+      reward: { type: "points", points: 10, label: "计划点 ×10" },
+      slots: 2,
+      acceptors: [
+        { username: "AAAwer", name: "血月", role: "contractor", at: now },
+        { username: "AAAwe", name: "月影", role: "player", at: now }
+      ],
+      status: "review", deadline: null, createdAt: now
+    });
+    st.missionReports.unshift({
+      id: "test_flow_report_2", missionId: "test_flow_mission", missionTitle: "联调测试委托",
+      level: "D", loc: "A区", reward: "计划点 ×10", desc: "用于验证逐人审批、独立结算与主控台计数的临时委托。",
+      applicant: { username: "AAAwe", name: "月影", role: "player" },
+      submittedAt: now, deadlineAt: null, status: "pending", note: ""
+    });
+    st.missionReports.unshift({
+      id: "test_flow_report", missionId: "test_flow_mission", missionTitle: "联调测试委托",
+      level: "D", loc: "A区", reward: "计划点 ×10", desc: "用于验证逐人审批、独立结算与主控台计数的临时委托。",
+      applicant: { username: "AAAwer", name: "血月", role: "contractor" },
+      submittedAt: now, deadlineAt: null, status: "pending", note: ""
+    });
+    const beforeA = Number((((st.wallets || {})["AAAwer"]) || {}).points) || 0;
+    const beforeB = Number((((st.wallets || {})["AAAwe"]) || {}).points) || 0;
+    localStorage.setItem(STATE_KEY, JSON.stringify(st));
+
+    const win = await bootApp("admin");
+    const doc = win.document;
+    await sleep(700);
+    report("A1 管理员主控台渲染 3 张卡", doc.querySelectorAll(".data-card").length === 3, doc.querySelectorAll(".data-card").length);
+
+    const approvalMenu = doc.querySelector('.menu-item[data-id="approval"]');
+    if (!approvalMenu) throw new Error("管理员菜单缺少审批入口");
+    approvalMenu.click();
+    await sleep(1000);
+    const reportTab = Array.prototype.find.call(doc.querySelectorAll("[data-atab]"), (b) => b.dataset.atab === "report");
+    if (reportTab) { reportTab.click(); await sleep(600); }
+
+    const passA = doc.querySelector('[data-pass-report="test_flow_report"]');
+    const passB = doc.querySelector('[data-pass-report="test_flow_report_2"]');
+    report("A2 两位接取人的申请都出现在审批列表", !!passA && !!passB, !!passA + "/" + !!passB);
+
+    if (passA) passA.click();
+    await sleep(1000);
+    let after = readState();
+    let mission = (after.missions || []).find((m) => m.id === "test_flow_mission");
+    let repA = (after.missionReports || []).find((r) => r.id === "test_flow_report");
+    let repB = (after.missionReports || []).find((r) => r.id === "test_flow_report_2");
+    let pointsA = Number((((after.wallets || {})["AAAwer"]) || {}).points) || 0;
+    let pointsB = Number((((after.wallets || {})["AAAwe"]) || {}).points) || 0;
+    report("A3 第一位申请审批通过", !!repA && repA.status === "approved", repA ? repA.status : "missing");
+    report("A4 仍有人待审批时委托保持待审批", !!mission && mission.status === "review", mission ? mission.status : "missing");
+    report("A5 仅血月拿到计划点（+10）", pointsA === beforeA + 10 && pointsB === beforeB, beforeA + "->" + pointsA + " / " + beforeB + "->" + pointsB);
+    report("A6 月影申请仍为待审批", !!repB && repB.status === "pending", repB ? repB.status : "missing");
+
+    const passB2 = doc.querySelector('[data-pass-report="test_flow_report_2"]');
+    if (passB2) passB2.click();
+    await sleep(1000);
+    after = readState();
+    mission = (after.missions || []).find((m) => m.id === "test_flow_mission");
+    repA = (after.missionReports || []).find((r) => r.id === "test_flow_report");
+    repB = (after.missionReports || []).find((r) => r.id === "test_flow_report_2");
+    pointsA = Number((((after.wallets || {})["AAAwer"]) || {}).points) || 0;
+    pointsB = Number((((after.wallets || {})["AAAwe"]) || {}).points) || 0;
+    report("A7 第二位审批通过后委托完成", !!mission && mission.status === "done" && !!mission.completedAt, mission ? mission.status : "missing");
+    report("A8 月影同样拿到计划点（+10）", pointsB === beforeB + 10 && pointsA === beforeA + 10, pointsB);
+    report("A9 两份申请均为 approved", !!repA && repA.status === "approved" && !!repB && repB.status === "approved", (repA && repA.status) + "/" + (repB && repB.status));
+
+    const sysActs = (after.activityLog || []).filter((a) => a.scope === "system" && String(a.text || "").indexOf("联调测试委托") >= 0);
+    report("A10 两笔审批都有系统动态", sysActs.length >= 2, sysActs.length);
+    const notes = (after.notifications || []).filter((n) => String(n.text || "").indexOf("联调测试委托") >= 0);
+    report("A11 两位申请人都收到结算通知", notes.length >= 2, notes.length);
+  }
+
+  async function phase4() {
+    heading("阶段四 · 契约者血月：审批后主控台归零");
+    const win = await bootApp("contractor");
+    const doc = win.document;
+    await sleep(800);
+    const cards = doc.querySelectorAll(".data-card");
+    report("B1 主控台渲染 4 张卡", cards.length === 4, cards.length);
+    const onlineCard = Array.prototype.find.call(cards, (c) => c.textContent.indexOf("在线委托") >= 0);
+    const val = onlineCard ? onlineCard.querySelector(".card-value").textContent.trim() : "";
+    report("B2 审批后在线委托计数归零", val === "0", val || "missing");
+    const tl = doc.querySelector(".timeline") ? doc.querySelector(".timeline").textContent : "";
+    report("B3 最近动态出现审批通过记录", tl.indexOf("审批通过") >= 0, tl.replace(/\s+/g, " ").trim().slice(0, 60));
+
+    const st = readState();
+    const walletPoints = Number((((st.wallets || {})["AAAwer"]) || {}).points) || 0;
+    const pointCard = Array.prototype.find.call(cards, (c) => c.textContent.indexOf("计划点余额") >= 0);
+    const shown = pointCard ? pointCard.querySelector(".card-value").textContent.trim() : "";
+    report("B4 计划点余额显示结算后数值", shown === String(walletPoints), shown + " / " + walletPoints);
+  }
+
+  async function main() {
+    snapshot();
+    try {
+      await phase0();
+      await phase1();
+      await phase2();
+      await phase2b();
+      await phase3();
+      await phase4();
+    } catch (err) {
+      report("测试执行异常", false, err && err.message ? err.message : String(err));
+    } finally {
+      try { fr.src = "about:blank"; } catch (e) { /* ignore */ }
+      await sleep(200);
+      restore();
+      banner("测试完成：通过 " + passCount + " 项，失败 " + failCount + " 项。" + (failCount ? "请检查 FAIL 行。" : "全部通过。"), failCount ? "fail" : "pass");
+      document.title = failCount ? "回归测试 失败 " + failCount : "回归测试 全部通过";
+      document.documentElement.setAttribute("data-done", "1");
+      document.documentElement.setAttribute("data-pass", String(passCount));
+      document.documentElement.setAttribute("data-fail", String(failCount));
+    }
+  }
+
+  /* 数据清理模式：tests/run.html?clean=1
+   * 仅删除开发联调产生的测试委托 / 测试帖 / 动态 / 告警 / 通知，保留真实账号与地图数据。*/
+  function cleanMode() {
+    heading("数据清理 · 删除开发联调残留");
+    const st = readState();
+    const before = {
+      missions: (st.missions || []).length,
+      forum: (st.forum || []).length,
+      reports: (st.missionReports || []).length,
+      notifications: (st.notifications || []).length,
+      activity: (st.activityLog || []).length,
+      alerts: (st.systemAlerts || []).length
+    };
+    report("C0 清理前存档统计", true, "委托 " + before.missions + " / 帖子 " + before.forum + " / 申请 " + before.reports + " / 通知 " + before.notifications + " / 动态 " + before.activity + " / 告警 " + before.alerts);
+
+    const isTestMission = (m) => /^(test_|test-)/.test(String(m.id || "")) || /联调测试|道具奖励委托/.test(String(m.title || ""));
+    const removedMissions = (st.missions || []).filter(isTestMission).map((m) => m.title + "(" + m.id + ")");
+    const testMissionIds = new Set((st.missions || []).filter(isTestMission).map((m) => m.id));
+    st.missions = (st.missions || []).filter((m) => !isTestMission(m));
+
+    const removedReports = (st.missionReports || []).filter((r) => testMissionIds.has(r.missionId) || /联调测试|道具奖励/.test(String(r.missionTitle || ""))).map((r) => r.missionTitle);
+    st.missionReports = (st.missionReports || []).filter((r) => !(testMissionIds.has(r.missionId) || /联调测试|道具奖励/.test(String(r.missionTitle || ""))));
+
+    const testPostIds = new Set(["broadcast-test", "f1793062432394", "f1792941536290"]);
+    const isTestPost = (p) => testPostIds.has(String(p.id)) || /测试帖子|回归贴|联调测试/.test(String(p.title || "") + String(p.body || ""));
+    const removedPosts = (st.forum || []).filter(isTestPost).map((p) => p.title);
+    st.forum = (st.forum || []).filter((p) => !isTestPost(p));
+
+    report("C1 已删除测试委托", true, removedMissions.join("、") || "无");
+    report("C2 已删除测试帖", true, removedPosts.join("、") || "无");
+    report("C3 已删除测试申请", true, removedReports.join("、") || "无");
+
+    st.activityLog = [];
+    st.systemAlerts = [];
+    st.notifications = [];
+    st.registerBypass = { count: 0, users: [] };
+    st.missionReports = st.missionReports || [];
+    localStorage.setItem(STATE_KEY, JSON.stringify(st));
+
+    const after = readState();
+    const accounts = (() => { try { return JSON.parse(localStorage.getItem("sdj_accounts") || "[]"); } catch (e) { return []; } })();
+    report("C4 清理后委托为空", (after.missions || []).length === 0, (after.missions || []).length);
+    report("C5 清理后帖子为空", (after.forum || []).length === 0, (after.forum || []).length);
+    report("C6 动态 / 告警 / 通知已清空", (after.activityLog || []).length === 0 && (after.systemAlerts || []).length === 0 && (after.notifications || []).length === 0,
+      (after.activityLog || []).length + "/" + (after.systemAlerts || []).length + "/" + (after.notifications || []).length);
+    report("C7 注册绕过计数已归零", Number((after.registerBypass || {}).count) === 0, (after.registerBypass || {}).count);
+    report("C8 账号保留 3 个且角色正确", accounts.length === 3 && accounts.map((a) => a.role).sort().join(",") === "admin,contractor,player",
+      accounts.map((a) => (a.displayName || a.username) + "(" + a.role + ")").join("、"));
+
+    banner("清理完成。未保留任何测试委托 / 测试帖 / 动态 / 告警 / 通知；真实账号与地图数据未改动。", "pass");
+    document.title = "数据清理完成";
+    document.documentElement.setAttribute("data-done", "1");
+    document.documentElement.setAttribute("data-pass", String(passCount));
+    document.documentElement.setAttribute("data-fail", String(failCount));
+  }
+
+  /* 存档检查模式：tests/run.html?inspect=1（只读，不修改任何数据）*/
+  function inspectMode() {
+    heading("存档检查 · 只读");
+    const st = readState();
+    report("I1 存档统计", true,
+      "委托 " + (st.missions || []).length + " / 帖子 " + (st.forum || []).length +
+      " / 申请 " + (st.missionReports || []).length + " / 通知 " + (st.notifications || []).length +
+      " / 动态 " + (st.activityLog || []).length + " / 告警 " + (st.systemAlerts || []).length);
+    (st.missions || []).forEach((m) => report("MISSION " + m.id, true, (m.title || "") + " / " + (m.status || "") + " / " + (m.loc || "")));
+    (st.forum || []).forEach((p) => report("POST " + p.id, true,
+      (p.title || "") + " / " + (p.author || "") + " / " + (p.section || "") + " / " + String(p.body || "").replace(/\s+/g, " ").slice(0, 80)));
+    const accounts = (() => { try { return JSON.parse(localStorage.getItem("sdj_accounts") || "[]"); } catch (e) { return []; } })();
+    report("I2 账号", true, accounts.map((a) => (a.displayName || a.username) + "(" + a.role + ")").join("、") || "无");
+    banner("只读检查完成，未修改任何数据。", "pass");
+    document.title = "存档检查完成";
+    document.documentElement.setAttribute("data-done", "1");
+  }
+
+  if (/[?&]clean=1/.test(location.search)) cleanMode();
+  else if (/[?&]inspect=1/.test(location.search)) inspectMode();
+  else main();
+})();
+</script>
+</body>
+</html>
