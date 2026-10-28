@@ -405,6 +405,15 @@
     let form = { username: "", displayName: "", password: "", confirm: "", inviteCode: "" };
     let errors = { username: "", displayName: "", password: "", confirm: "", inviteCode: "" };
 
+    // 云端模式下邀请码由服务端校验，前端只检查是否填写
+    function inviteError(v) {
+      if (!isAdminReg) return "";
+      const code = String(v || "").trim();
+      if (IS_CLOUD) return code ? "" : "请填写邀请码";
+      if (!ADMIN_INVITE_CODE) return "本地模式未配置邀请码";
+      return code === ADMIN_INVITE_CODE ? "" : "邀请码错误";
+    }
+
     const page = el("div", { class: "panel" },
       el("div", { class: "panel-inner" },
         el("div", { class: "segmented" },
@@ -427,7 +436,7 @@
 
         el("div", { class: "field invite-field", hidden: true },
           el("label", { class: "field-label" }, "内部邀请码"),
-          inputWithIcon("inviteCode", iconKey(), "请输入管理者邀请码", val => { form.inviteCode = val; errors.inviteCode = (ADMIN_INVITE_CODE && val === ADMIN_INVITE_CODE) ? "" : "无效邀请码"; refreshErrors(); }),
+          inputWithIcon("inviteCode", iconKey(), "请输入管理者邀请码", val => { form.inviteCode = val; errors.inviteCode = inviteError(val); refreshErrors(); }),
           errBox("inviteCode")
         ),
         el("div", { class: "banner", hidden: true }),
@@ -472,7 +481,7 @@
     }
 
     async function applyRequestState() {
-      if (isAdminReg) return;
+      if (isAdminReg && !IS_CLOUD) return;
       if (IS_CLOUD) {
         const name = String(form.username || "").trim();
         if (!name) { setReqStatus("尚未发送审批请求"); return; }
@@ -481,6 +490,8 @@
         try {
           const r = await window.SDJCloud.registrationStatus(name);
           if (!r || !r.ok) { setReqStatus("云端状态读取失败，请检查网络", "err"); return; }
+          const wantRole = isAdminReg ? "admin" : normalRole;
+          if (r.role && r.role !== wantRole) { setReqStatus("尚未发送审批请求"); return; }
           const st = r.status || "none";
           if (st === "none") setReqStatus("尚未发送审批请求");
           else if (st === "pending") setReqStatus("已提交，等待管理者审批…", "warn");
@@ -511,6 +522,7 @@
       errors.displayName = !form.displayName ? "显示名不能为空" : "";
       errors.password = validatePassword(form.password);
       errors.confirm = form.password !== form.confirm ? "两次密码不一致" : "";
+      errors.inviteCode = inviteError(form.inviteCode);
       refreshErrors();
       if (Object.values(errors).some(e => e)) {
         banner.hidden = false; banner.className = "banner"; banner.textContent = "请先修正表单错误。"; return;
@@ -521,7 +533,9 @@
       reqBtn.disabled = true;
       if (IS_CLOUD) {
         try {
-          const r = await window.SDJCloud.submitRegistration(form.username, form.displayName, normalRole);
+          const r = isAdminReg
+            ? await window.SDJCloud.adminRequest(form.username, form.displayName, form.inviteCode)
+            : await window.SDJCloud.submitRegistration(form.username, form.displayName, normalRole);
           if (!r || !r.ok) {
             banner.hidden = false; banner.className = "banner";
             banner.textContent = "请求发送失败：" + ((r && r.error) || "未知错误");
@@ -601,8 +615,9 @@
       }
       inviteField.hidden = !isAdminReg;
       normalRoleField.hidden = isAdminReg; 
-      reqBox.hidden = isAdminReg;
-      if (!isAdminReg) { applyRequestState(); startRequestPolling(); }
+      // 本地模式的管理者注册不走审批；云端模式与普通注册一样需要管理员同意
+      reqBox.hidden = isAdminReg && !IS_CLOUD;
+      if (!isAdminReg || IS_CLOUD) { applyRequestState(); startRequestPolling(); }
     }
 
     segBtns.forEach(btn => btn.addEventListener("click", () => {
@@ -639,11 +654,7 @@
       errors.displayName = !form.displayName ? "显示名不能为空" : "";
       errors.password = validatePassword(form.password);
       errors.confirm = form.password !== form.confirm ? "两次密码不一致" : "";
-      if (isAdminReg) {
-        errors.inviteCode = (ADMIN_INVITE_CODE && form.inviteCode === ADMIN_INVITE_CODE) ? "" : "邀请码错误";
-      } else {
-        errors.inviteCode = ""; 
-      }
+      errors.inviteCode = inviteError(form.inviteCode);
       refreshErrors();
 
       if (Object.values(errors).some(e => e)) {
@@ -698,6 +709,46 @@
       const finalRole = isAdminReg ? "admin" : normalRole;
 
       if (window.SDJCloud && window.SDJCloud.enabled()) {
+        if (isAdminReg) {
+          // 管理者：先确认申请已获批，再建 Auth 账号，最后让服务端建档
+          const st = await window.SDJCloud.registrationStatus(form.username);
+          if (!st || !st.ok) {
+            banner.hidden = false; banner.className = "banner";
+            banner.textContent = "无法读取审批状态，请检查网络后重试。"; return;
+          }
+          if (st.role !== "admin") {
+            banner.hidden = false; banner.className = "banner";
+            banner.textContent = "未找到你的管理者申请，请先点击「向管理者发送请求」。"; return;
+          }
+          if (st.status !== "approved") {
+            banner.hidden = false; banner.className = "banner";
+            banner.textContent = st.status === "pending"
+              ? "管理者尚未审批，请收到「管理者已审批」后再完成注册。"
+              : st.status === "completed"
+                ? "该申请已完成注册，请直接登录。"
+                : "管理者申请未通过，请重新发送请求。";
+            return;
+          }
+          const reg = await window.SDJCloud.signUpNoProfile(form.username, form.displayName, form.password);
+          if (!reg.ok) {
+            banner.hidden = false; banner.className = "banner"; banner.textContent = reg.error; return;
+          }
+          const claim = await window.SDJCloud.adminClaim();
+          if (!claim.ok) {
+            banner.hidden = false; banner.className = "banner";
+            banner.textContent = "建档失败：" + claim.error; return;
+          }
+          const p = claim.profile || {};
+          setSession({
+            role: p.role || "admin",
+            displayName: p.display_name || form.displayName,
+            username: p.username || form.username,
+            ts: Date.now(), auto: false
+          });
+          ensureMemberRecord(p.username || form.username, p.display_name || form.displayName, "admin");
+          showLoadingScreen({ onComplete: () => navigate("/app") });
+          return;
+        }
         const res = await window.SDJCloud.signUp(form.username, form.displayName, form.password, finalRole);
         if (!res.ok) {
           banner.hidden = false; banner.className = "banner"; banner.textContent = res.error; return;
@@ -6808,13 +6859,17 @@
     return ({ approved: "已通过", rejected: "已驳回", expired: "已超时", completed: "已完成注册" })[status] || status;
   }
 
+  function registerRoleLabel(role) {
+    return role === "player" ? "玩家" : role === "contractor" ? "契约者" : "管理者";
+  }
+
   function renderApprovalPage(container) {
     reloadState();
     sweepTimeouts(true);
     const s = loadState();
     const regs = s.registrationRequests || [];
     const reports = s.missionReports || [];
-    const tabs = [["player", "玩家审批"], ["contractor", "契约者审批"], ["report", "委托任务审批"]];
+    const tabs = [["player", "玩家审批"], ["contractor", "契约者审批"], ["admin", "管理者审批"], ["report", "委托任务审批"]];
     const countOf = (key) => key === "report"
       ? reports.filter(r => r.status === "pending").length
       : regs.filter(r => r.role === key && r.status === "pending").length;
@@ -6857,7 +6912,7 @@
           </div>` : ""}
       `;
     } else {
-      const roleName = approvalTab === "player" ? "玩家" : "契约者";
+      const roleName = registerRoleLabel(approvalTab);
       const pending = regs.filter(r => r.role === approvalTab && r.status === "pending");
       const history = regs.filter(r => r.role === approvalTab && r.status !== "pending");
       body = `
@@ -6907,10 +6962,10 @@
         r.reviewedAt = Date.now();
         r.note = "";
         pushNotification(r.username, "你的注册申请已通过管理者审批。");
-        pushSystemActivity(`管理者通过了 ${r.displayName} 的${r.role === "player" ? "玩家" : "契约者"}注册申请`, "approval");
+        pushSystemActivity(`管理者通过了 ${r.displayName} 的${registerRoleLabel(r.role)}注册申请`, "approval");
         saveState();
         renderApprovalPage(container);
-        toast(`已同意 ${r.displayName} 的${r.role === "player" ? "玩家" : "契约者"}注册申请`);
+        toast(`已同意 ${r.displayName} 的${registerRoleLabel(r.role)}注册申请`);
       };
     });
 

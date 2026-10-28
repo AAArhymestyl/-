@@ -16,7 +16,9 @@
   let client = null;
   let profile = null;
 
-  const enabled = () => !!(URL_BASE && ANON_KEY);
+  // ?local=1 强制本地模式：回归测试台用它避免读写线上库
+  const FORCE_LOCAL = /[?&]local=1/.test(location.search);
+  const enabled = () => !FORCE_LOCAL && !!(URL_BASE && ANON_KEY);
   const emailFor = (username) => `${String(username || "").toLowerCase()}@sdj.local`;
 
   // 多 CDN 回退：部分网络下 jsDelivr 不可达时自动切换 esm.sh
@@ -317,6 +319,30 @@
     rpc("registration_submit", { p_username: username, p_display_name: displayName, p_role: role });
   const registrationStatus = (username) =>
     rpc("registration_status", { p_username: username });
+  // 管理者邀请码（审批制）：申请由服务端校验邀请码，前端拿不到码
+  const adminRequest = (username, displayName, invite) =>
+    rpc("admin_request_submit", { p_username: username, p_display_name: displayName, p_invite: invite });
+  const adminClaim = () => rpc("admin_claim");
+
+  // 只建 Auth 账号、不写 profiles：管理员申请获批后，档案由 admin_claim 在服务端建档
+  async function signUpNoProfile(username, displayName, password) {
+    if (!enabled()) return { ok: false, error: "云端未配置" };
+    try {
+      const c = await ensureClient();
+      const { data, error } = await c.auth.signUp({
+        email: emailFor(username),
+        password,
+        options: { data: { username, display_name: displayName, role: "admin" } }
+      });
+      if (error) return { ok: false, error: translate(error.message) };
+      if (!data.session) {
+        return { ok: false, error: "注册成功但需邮箱确认：请在 Supabase 后台关闭 Email Confirm，或改用真实邮箱流程。" };
+      }
+      return { ok: true, uid: data.user.id };
+    } catch (e) {
+      return { ok: false, error: translate(e.message || String(e)) };
+    }
+  }
 
   window.SDJCloud = {
     enabled,
@@ -340,6 +366,9 @@
     submitMission,
     submitRegistration,
     registrationStatus,
+    adminRequest,
+    adminClaim,
+    signUpNoProfile,
     rpc,
     watch,
     unsubscribe,

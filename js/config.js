@@ -9,9 +9,10 @@ window.SDJ_CONFIG = {
   supabaseUrl: "https://dumhzaasgterekohjxgv.supabase.co",
   supabaseAnonKey: "sb_publishable_Rz2by2gZiHo-MkeCszZfDg_l-t2b7Xx",
 
-  // 公开部署安全开关：关闭管理者自助注册，避免邀请码随公开仓库泄露后被提权
-  // 仅本地/私有部署需要自助注册管理员时，才改为 true 并填写只有自己知道的邀请码
-  allowAdminRegister: false,
+  // 管理者注册入口：true 时注册页显示「高级认证」
+  // 云端模式下邀请码由数据库校验（public.app_config），前端 adminInvite 留空即可；
+  // 提交后只是创建申请，必须由现任管理员在「待审批 · 管理者审批」同意才会真正成为管理者
+  allowAdminRegister: true,
   adminInvite: "",
 
   // 委托等级配色：地图标记、侧边栏、任务列表共用同一份定义
