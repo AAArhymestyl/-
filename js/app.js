@@ -1344,6 +1344,31 @@
     return { ok: true };
   }
 
+  // 主控台快捷「发布全服广播」：直接跳到成员管理页的广播栏并聚焦，保证只有一套发布入口
+  function jumpToMemberBroadcast() {
+    closeActionDialog();
+    const menu = document.querySelector('.menu-item[data-id="member"]');
+    if (!menu) { toast("未找到成员管理入口"); return; }
+    menu.click();
+    let tries = 0;
+    const focusBar = () => {
+      const input = document.getElementById("broadcastInput");
+      if (!input) {
+        if (tries++ < 50) setTimeout(focusBar, 100);
+        return;
+      }
+      const bar = document.getElementById("memberBroadcastBar");
+      if (bar) {
+        bar.scrollIntoView({ behavior: "smooth", block: "center" });
+        bar.classList.add("broadcast-focus");
+        setTimeout(() => bar.classList.remove("broadcast-focus"), 2400);
+      }
+      input.focus();
+      try { input.setSelectionRange(input.value.length, input.value.length); } catch (e) {}
+    };
+    setTimeout(focusBar, 60);
+  }
+
   function loadExploreStats(container) {
     const apply = (items) => {
       if (!container.isConnected) return;
@@ -2066,46 +2091,11 @@
 
     const closeBar = `<button class="btn-sm ghost" data-close>关闭</button>`;
 
-    /* 0 · 发布全服广播 —— 与「神降系统成员管理」页广播栏完全同一条链路 */
+    /* 0 · 发布全服广播 —— 直接跳到「神降系统成员管理」页的广播栏（图 1），
+       与那里共用同一个输入框、同一个发布函数和同一份广播数据，不再维护重复弹窗。 */
     if (actionId === 0) {
-      panel.innerHTML = `
-        <div class="modal-title">发布全服广播</div>
-        <div class="modal-desc">广播会显示在所有玩家 / 契约者主控台顶部横板，并按设定时长自动过期。新广播覆盖横幅展示，历史可在横板「历史」中查看。</div>
-        <label class="modal-label">广播内容
-          <textarea class="input-line" id="bcText" rows="3" maxlength="200" placeholder="最多 200 字"></textarea>
-        </label>
-        <label class="modal-label">持续时长
-          <select class="input-line" id="bcMinutes">
-            <option value="30">30 分钟</option>
-            <option value="60" selected>1 小时</option>
-            <option value="180">3 小时</option>
-            <option value="360">6 小时</option>
-            <option value="720">12 小时</option>
-            <option value="1440">24 小时</option>
-          </select>
-        </label>
-        <div class="modal-actions"><button class="btn-sm" id="bcSend">发布广播</button>${closeBar}</div>
-      `;
-      panel.querySelector("[data-close]").onclick = closeActionDialog;
-      panel.querySelector("#bcSend").onclick = async () => {
-        const text = panel.querySelector("#bcText").value.trim();
-        if (!text) { toast("广播内容不能为空"); return; }
-        const btn = panel.querySelector("#bcSend");
-        const minutes = Number(panel.querySelector("#bcMinutes").value) || 60;
-        btn.disabled = true;
-        try {
-          const r = await publishBroadcastText(text, minutes);
-          if (!r.ok) { toast(r.error || "广播发布失败"); return; }
-          toast(`广播已发布，持续 ${minutes} 分钟`);
-          closeActionDialog();
-        } catch (err) {
-          console.error("[广播] 发布失败：", err);
-          toast("发布失败：" + (err.message || "未知错误"));
-        } finally {
-          btn.disabled = false;
-        }
-      };
-      panel.querySelector("#bcText").focus();
+      overlay.remove();
+      jumpToMemberBroadcast();
       return;
     }
 
@@ -7417,7 +7407,7 @@
       title: "神降系统成员管理", en: "MEMBER MGMT",
       tools: `<span class="count-chip">${rows.length} 名成员</span>`,
       body: `
-        <div class="broadcast panel-cut">
+        <div class="broadcast panel-cut" id="memberBroadcastBar">
           <input class="input-line" id="broadcastInput" placeholder="向全服发送广播（最多 200 字，新广播会覆盖横幅）" maxlength="200">
           <select class="input-line" id="broadcastMinutes" style="max-width:170px">
             <option value="30">持续 30 分钟</option>
