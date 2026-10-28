@@ -6,8 +6,8 @@
  * anon key 是公开密钥，安全由数据库 RLS 策略保证，不要在这里放 service_role key。
  */
 window.SDJ_CONFIG = {
-  supabaseUrl: "",
-  supabaseAnonKey: "",
+  supabaseUrl: "https://dumhzaasgterekohjxgv.supabase.co",
+  supabaseAnonKey: "sb_publishable_Rz2by2gZiHo-MkeCszZfDg_l-t2b7Xx",
 
   // 公开部署安全开关：关闭管理者自助注册，避免邀请码随公开仓库泄露后被提权
   // 仅本地/私有部署需要自助注册管理员时，才改为 true 并填写只有自己知道的邀请码
