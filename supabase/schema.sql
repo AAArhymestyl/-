@@ -1528,10 +1528,11 @@ declare
   v_now bigint := (extract(epoch from clock_timestamp()) * 1000)::bigint;
   v_req jsonb;
   v_recent int;
+  v_from_name text;
 begin
   if auth.uid() is null then return jsonb_build_object('ok', false, 'error', '请先登录'); end if;
   if public.is_banned() then return jsonb_build_object('ok', false, 'error', '该账号已被移出系统'); end if;
-  select username into v_me from public.profiles where id = auth.uid();
+  select username, display_name into v_me, v_from_name from public.profiles where id = auth.uid();
   if v_me is null then return jsonb_build_object('ok', false, 'error', '缺少成员档案'); end if;
   if v_to = '' then return jsonb_build_object('ok', false, 'error', '参数错误'); end if;
   if v_to = v_me then return jsonb_build_object('ok', false, 'error', '不能添加自己为好友'); end if;
@@ -1565,6 +1566,16 @@ begin
   insert into public.social_state (id, data, updated_at) values (1, v_data, now())
   on conflict (id) do update set data = excluded.data, updated_at = now();
 
+  -- 给接收方写一条全服通告，保证不在好友页时也能实时看到“新的密语”提示
+  update public.world_state
+     set notifications = jsonb_build_array(jsonb_build_object(
+           'id', 'n' || v_now || '_friend_req',
+           'username', v_to,
+           'text', coalesce(v_from_name, v_me) || ' 想与你共谈密语（好友申请）',
+           'at', v_now, 'read', false)) || coalesce(notifications, '[]'::jsonb),
+         updated_at = now()
+   where id = 1;
+
   return jsonb_build_object('ok', true, 'request', v_req);
 end;
 $$;
@@ -1583,6 +1594,7 @@ declare
   v_a text;
   v_b text;
   v_key text;
+  v_me_name text;
   v_now bigint := (extract(epoch from clock_timestamp()) * 1000)::bigint;
   v_ok boolean := coalesce(p_accept, false);
 begin
@@ -1635,6 +1647,18 @@ begin
   v_data := jsonb_set(v_data, array['social'], v_social, true);
   v_data := jsonb_set(v_data, array['updatedAt'], to_jsonb(v_now), true);
   update public.social_state set data = v_data, updated_at = now() where id = 1;
+
+  if v_ok and v_a is not null then
+    select display_name into v_me_name from public.profiles where username = v_me;
+    update public.world_state
+       set notifications = jsonb_build_array(jsonb_build_object(
+             'id', 'n' || v_now || '_friend_ok',
+             'username', v_a,
+             'text', coalesce(v_me_name, v_me) || ' 已同意你的好友申请，现在可以开始密谈了',
+             'at', v_now, 'read', false)) || coalesce(notifications, '[]'::jsonb),
+           updated_at = now()
+     where id = 1;
+  end if;
 
   return jsonb_build_object('ok', true, 'status', v_req->>'status');
 end;
