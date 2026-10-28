@@ -902,6 +902,7 @@
   let currentMenuId = "dashboard";
   let pendingMenu = null;   // 从独立页（帖子详情 / 发帖）返回主应用时要落到的菜单
   let globeEngine = null;
+  let pendingMapLocation = null;
 
   const menuConfig = {
     player: [
@@ -2298,11 +2299,30 @@
     }
     try {
       // 经典脚本中 import() 以脚本自身地址为基准，故这里相对 js/app.js 解析
-      const { GlobeMapEngine } = await import("./map.js?v=4");
+      const { GlobeMapEngine } = await import("./map.js?v=5");
       if (!host || !host.isConnected) return;
       globeEngine = new GlobeMapEngine("globe-container", userRole);
       // 暴露给调试与后续扩展（只读使用），也便于控制台验证委托绑定
       window.SDJMapEngine = globeEngine;
+      if (pendingMapLocation) {
+        const target = pendingMapLocation;
+        pendingMapLocation = null;
+        let label = target.id ? globeEngine.labels.find(l => l.userData.id === target.id) : null;
+        if (!label && Number.isFinite(Number(target.lat)) && Number.isFinite(Number(target.lon))) {
+          let best = null, bestDist = Infinity;
+          globeEngine.labels.forEach(l => {
+            const d = Math.hypot(Number(l.userData.lat) - Number(target.lat), Number(l.userData.lon) - Number(target.lon));
+            if (d < bestDist) { bestDist = d; best = l; }
+          });
+          if (best && bestDist < 2) label = best;
+        }
+        if (label) {
+          globeEngine.onLabelClick(label);
+          globeEngine.flyToTarget(label);
+        } else if (target.lat != null && target.lon != null && typeof globeEngine.showTemporaryMarker === "function") {
+          globeEngine.showTemporaryMarker(target);
+        }
+      }
     } catch (err) {
       console.error("[地图引擎加载失败]", err);
       if (host && host.isConnected) {
@@ -4279,6 +4299,9 @@
       if (!p.authorRole) { p.authorRole = FORUM_LEGACY_ROLES[p.id] || guessForumRole(p.author); changed = true; }
       if (p.views == null) { p.views = 0; changed = true; }
       if (!Array.isArray(p.comments)) { p.comments = []; changed = true; }
+      if (!Array.isArray(p.images)) { p.images = []; changed = true; }
+      if (!Array.isArray(p.viewedBy)) { p.viewedBy = []; changed = true; }
+      if (p.location === undefined) { p.location = null; changed = true; }
       if (p.essence == null) { p.essence = false; changed = true; }
       if (p.pinned == null) { p.pinned = false; changed = true; }
       if (!p.createdAt) { p.createdAt = Date.now() - i * 3600000; changed = true; }
@@ -4374,6 +4397,8 @@
 
     const postCard = (p) => {
       const comments = p.comments || [];
+      const images = Array.isArray(p.images) ? p.images.filter(Boolean) : [];
+      const loc = p.location && p.location.name ? p.location : null;
       const preview = comments.length ? `
         <div class="forum-comment-preview">
           ${comments.slice(0, 2).map(c => `<div class="preview-line"><b>${escHTML(c.author)}：</b>${escHTML(c.text)}</div>`).join("")}
@@ -4397,12 +4422,16 @@
           </div>
           <div class="post-title">${escHTML(p.title || "")}</div>
           <div class="post-body clamp">${escHTML(p.body || "")}</div>
+          ${images.length ? `<div class="post-images">
+            ${images.slice(0, 3).map(url => `<img class="post-image" src="${escHTML(url)}" alt="帖子配图" loading="lazy">`).join("")}
+            ${images.length > 3 ? `<span class="post-image-more">+${images.length - 3}</span>` : ""}
+          </div>` : ""}
           ${preview}
           <div class="post-foot">
             <span class="post-stat">浏览 ${p.views || 0}</span>
             <button class="like-btn ${p.liked ? "liked" : ""}" data-like="${escHTML(p.id)}">赞 ${p.likes || 0}</button>
             <span class="post-stat">评论 ${(p.comments || []).length}</span>
-            <span class="post-stat">分享</span>
+            ${loc ? `<button class="post-loc" data-goto-loc-post="${escHTML(p.id)}">⌖ ${escHTML(loc.name)}</button>` : `<span class="post-stat">分享</span>`}
           </div>
         </article>`;
     };
@@ -4516,6 +4545,12 @@
       card.onclick = (e) => {
         if (e.target.closest("button")) return;
         openPost(card.dataset.open);
+      };
+    });
+    container.querySelectorAll("[data-goto-loc-post]").forEach(btn => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        goToPostLocation(btn.dataset.gotoLocPost);
       };
     });
 
@@ -4726,19 +4761,16 @@
       wrap.querySelector("#forumBack").onclick = () => { pendingMenu = "forum"; navigate("/app"); };
       return;
     }
-    if (lastDetailView !== postId) {
-      initial.views = (initial.views || 0) + 1;
-      lastDetailView = postId;
-      saveState();
-    }
-
     const isAdmin = session.role === "admin";
     const cloud = !!(window.SDJCloud && window.SDJCloud.enabled());
+    let viewRecorded = false;
 
     function draw() {
       const p = loadState().forum.find(x => x.id === postId);
       if (!p) { pendingMenu = "forum"; navigate("/app"); return; }
       const comments = p.comments || [];
+      const images = Array.isArray(p.images) ? p.images.filter(Boolean) : [];
+      const loc = p.location && p.location.name ? p.location : null;
       const sectionName = (FORUM_SECTION_MAP[p.section] || {}).name || "日常记录";
       const commentHtml = comments.length ? comments.map(c => `
         <div class="comment-item">
@@ -4777,6 +4809,10 @@
           </div>
           <h1 class="detail-title">${escHTML(p.title || "")}</h1>
           <div class="detail-body">${escHTML(p.body || "")}</div>
+          ${images.length ? `<div class="detail-images">
+            ${images.map(url => `<img class="detail-image" src="${escHTML(url)}" alt="帖子配图" loading="lazy">`).join("")}
+          </div>` : ""}
+          ${loc ? `<button class="detail-loc" data-goto-loc-post="${escHTML(postId)}">⌖ ${escHTML(loc.name)}</button>` : ""}
           <div class="detail-stats">
             <span>浏览 ${p.views || 0}</span>
             <span>赞 ${p.likes || 0}</span>
@@ -4800,6 +4836,9 @@
         </div>`;
 
       wrap.querySelector("#forumBack").onclick = () => { pendingMenu = "forum"; navigate("/app"); };
+      wrap.querySelectorAll("[data-goto-loc-post]").forEach(btn => {
+        btn.onclick = () => goToPostLocation(btn.dataset.gotoLocPost);
+      });
 
       wrap.querySelector("#detailLike").onclick = async () => {
         const cur = loadState().forum.find(x => x.id === postId);
@@ -4929,15 +4968,74 @@
       };
     }
 
+    function canRedraw() {
+      const active = document.activeElement;
+      return !(active && wrap.contains(active) && /^(INPUT|TEXTAREA)$/.test(active.tagName));
+    }
+
+    // 浏览量：同一账号只计一次；云端用服务端原子函数，其他设备实时看到同一数字
+    async function recordForumView() {
+      if (viewRecorded) return;
+      viewRecorded = true;
+      const me = session.username || session.displayName;
+      if (cloud && /^[0-9a-f-]{36}$/i.test(String(postId))) {
+        const r = await window.SDJCloud.addForumView(postId);
+        if (r.ok) {
+          const cur = loadState().forum.find(x => x.id === postId);
+          if (cur) { cur.views = Number(r.views) || cur.views || 0; saveState(); }
+          if (canRedraw()) draw();
+        }
+        return;
+      }
+      const cur = loadState().forum.find(x => x.id === postId);
+      if (!cur) return;
+      cur.viewedBy = Array.isArray(cur.viewedBy) ? cur.viewedBy : [];
+      if (!cur.viewedBy.includes(me)) {
+        cur.viewedBy.push(me);
+        cur.views = cur.viewedBy.length;
+        saveState();
+        if (canRedraw()) draw();
+      }
+    }
+
     draw();
+    recordForumView();
 
     const onStorage = (e) => {
-      if (!e.key || e.key === STATE_KEY) draw();
+      if (!e.key || e.key === STATE_KEY) { if (canRedraw()) draw(); }
     };
     window.addEventListener("storage", onStorage);
+
+    // 详情页独立实时订阅：别人浏览/评论/加精/删帖后无需刷新即可更新
+    let detailClosed = false;
+    let detailChannel = null;
+    let detailTimer = null;
+    async function pullDetail() {
+      if (detailClosed || !cloud) return;
+      const row = await window.SDJCloud.getForumPost(postId);
+      if (!row || detailClosed) return;
+      const st = loadState();
+      const prev = st.forum.find(x => x.id === postId);
+      if (!prev) return;
+      row.liked = !!prev.liked;
+      Object.assign(prev, row);
+      try { localStorage.setItem(STATE_KEY, JSON.stringify(st)); } catch (e) { /* ignore */ }
+      if (canRedraw()) draw();
+    }
+    if (cloud) {
+      window.SDJCloud.watch("forum_posts", pullDetail).then(ch => {
+        if (detailClosed) { window.SDJCloud.unsubscribe(ch); return; }
+        detailChannel = ch;
+      });
+      detailTimer = setInterval(pullDetail, 15000);
+    }
+
     window.addEventListener("hashchange", function cleanupDetail() {
+      detailClosed = true;
       window.removeEventListener("storage", onStorage);
       window.removeEventListener("hashchange", cleanupDetail);
+      if (detailTimer) { clearInterval(detailTimer); detailTimer = null; }
+      if (detailChannel) { window.SDJCloud.unsubscribe(detailChannel); detailChannel = null; }
     });
   }
 
@@ -4957,11 +5055,13 @@
         <input class="editor-title" id="npTitle" maxlength="40" placeholder="标题（必填）">
         <textarea class="editor-body" id="npBody" rows="6" maxlength="600" placeholder="期待你的分享"></textarea>
         <div class="editor-media">
+          <input type="file" id="npImageInput" accept="image/*" multiple hidden>
           <button class="image-slot" id="npImage" type="button">+</button>
-          <div class="editor-slot-note">添加图片（占位，暂未开放）</div>
+          <div class="editor-image-preview" id="npImagePreview"></div>
+          <div class="editor-slot-note" id="npImageNote">最多 3 张，单张 ≤5MB（JPG / PNG / WebP / GIF）</div>
         </div>
         <button class="editor-row" id="npLocation" type="button">
-          <span>⌖</span><b>标记位置</b><i>占位，暂未开放</i><em>›</em>
+          <span>⌖</span><b>标记位置</b><i id="npLocationText">未选择</i><em>›</em>
         </button>
         <div class="editor-row static">
           <span>▤</span><b>选择版块</b>
@@ -4974,9 +5074,71 @@
         </button>
       </div>`;
 
+    const cloud = !!(window.SDJCloud && window.SDJCloud.enabled());
+    let images = [];
+    let location = null;
+
+    const renderImages = () => {
+      const box = wrap.querySelector("#npImagePreview");
+      box.innerHTML = images.map((url, i) => `
+        <span class="editor-image-item">
+          <img src="${escHTML(url)}" alt="待发布配图">
+          <button type="button" class="editor-image-del" data-del-image="${i}" title="移除">×</button>
+        </span>`).join("");
+      box.querySelectorAll("[data-del-image]").forEach(btn => {
+        btn.onclick = () => {
+          images.splice(Number(btn.dataset.delImage), 1);
+          renderImages();
+        };
+      });
+      const slot = wrap.querySelector("#npImage");
+      slot.style.display = images.length >= 3 ? "none" : "";
+      wrap.querySelector("#npImageNote").textContent = images.length
+        ? `已添加 ${images.length} / 3 张`
+        : "最多 3 张，单张 ≤5MB（JPG / PNG / WebP / GIF）";
+    };
+
+    const readFileDataURL = (file) => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("读取图片失败"));
+      reader.readAsDataURL(file);
+    });
+
+    const uploadFiles = async (files) => {
+      for (const file of Array.from(files || [])) {
+        if (images.length >= 3) { toast("最多只能添加 3 张图片"); break; }
+        if (!/^image\//.test(file.type || "")) { toast("只能上传图片文件"); continue; }
+        if (file.size > 5 * 1024 * 1024) { toast("单张图片不能超过 5MB"); continue; }
+        if (cloud) {
+          wrap.querySelector("#npImageNote").textContent = "图片上传中…";
+          const r = await window.SDJCloud.uploadForumImage(file);
+          if (!r.ok) { toast(r.error || "图片上传失败"); continue; }
+          images.push(r.url);
+        } else {
+          const url = await readFileDataURL(file);
+          if (url) images.push(url);
+        }
+      }
+      renderImages();
+    };
+
     wrap.querySelector("#forumBack").onclick = () => { pendingMenu = "forum"; navigate("/app"); };
-    wrap.querySelector("#npImage").onclick = () => toast("图片上传功能占位，本轮暂未开放");
-    wrap.querySelector("#npLocation").onclick = () => toast("位置标记功能占位，本轮暂未开放");
+    const imageInput = wrap.querySelector("#npImageInput");
+    wrap.querySelector("#npImage").onclick = () => imageInput.click();
+    imageInput.onchange = () => {
+      const files = Array.from(imageInput.files || []);
+      imageInput.value = "";
+      uploadFiles(files).catch(err => toast("图片处理失败：" + (err.message || "未知错误")));
+    };
+    wrap.querySelector("#npLocation").onclick = () => {
+      openPostLocationPicker((loc) => {
+        location = loc;
+        const label = wrap.querySelector("#npLocationText");
+        label.textContent = loc ? `${loc.name} · ${Number(loc.lat).toFixed(2)}, ${Number(loc.lon).toFixed(2)}` : "未选择";
+        label.classList.toggle("on", !!loc);
+      });
+    };
     wrap.querySelector("#npAdvanced").onclick = () => toast("高级设置占位，本轮暂未开放");
 
     wrap.querySelector("#npPublish").onclick = async () => {
@@ -4998,17 +5160,21 @@
           title, body, section,
           time: "刚刚",
           createdAt: Date.now(),
-          likes: 0, liked: false, views: 0,
+          likes: 0, liked: false, views: 0, viewedBy: [],
+          images: images.slice(), location: location || null,
           comments: [], essence: false, pinned: false
         };
-        const cloud = !!(window.SDJCloud && window.SDJCloud.enabled());
         let row = null;
         if (cloud) {
           row = await window.SDJCloud.addForumPost({
             author: session.displayName, title, body,
-            section, authorRole: session.role
+            section, authorRole: session.role,
+            images: images.slice(), location: location || null
           });
-          if (row) Object.assign(row, { section, authorRole: session.role, createdAt: Date.now(), comments: [], views: 0 });
+          if (row) Object.assign(row, {
+            section, authorRole: session.role, createdAt: Date.now(),
+            comments: [], views: 0, viewedBy: [], images: images.slice(), location: location || null
+          });
           else throw new Error("云端写入失败");
         }
         const st = loadState();
@@ -5027,6 +5193,88 @@
     };
   }
 
+  /* ---------------- 发帖 · 位置标记选择器 ---------------- */
+  function openPostLocationPicker(onSelect) {
+    const overlay = el("div", { class: "modal-overlay", id: "postLocModal" });
+    const panel = el("div", { class: "modal-panel panel-cut wide" });
+    overlay.appendChild(panel);
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+    requestAnimationFrame(() => overlay.classList.add("show"));
+
+    let items = [];
+    let ready = false;
+    panel.innerHTML = `
+      <div class="modal-title">标记位置</div>
+      <div class="modal-desc">选择地图上的地点，或直接填写经纬度创建一个自定义标记。发布后其他成员可点击地点直接跳转到地图。</div>
+      <input class="input-line" id="locSearch" placeholder="搜索地点名称 / 区域">
+      <div class="loc-pick-list" id="locPickList"><div class="empty-state">载入地点中…</div></div>
+      <div class="loc-custom panel-cut">
+        <div class="loc-custom-title">自定义坐标</div>
+        <div class="form-row-2">
+          <label class="modal-label">地点名称<input class="input-line" id="locName" maxlength="24" placeholder="如：旧城钟楼"></label>
+          <label class="modal-label">区域<input class="input-line" id="locDistrict" maxlength="8" placeholder="如：A区"></label>
+        </div>
+        <div class="form-row-2">
+          <label class="modal-label">纬度<input class="input-line" id="locLat" type="number" step="0.01" min="-90" max="90" placeholder="0.00"></label>
+          <label class="modal-label">经度<input class="input-line" id="locLon" type="number" step="0.01" min="-180" max="180" placeholder="0.00"></label>
+        </div>
+        <button class="btn-sm ghost" id="locCustomOk" type="button">使用自定义坐标</button>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-sm ghost" id="locClear" type="button">清除位置标记</button>
+        <button class="btn-sm ghost" id="locCancel" type="button">取消</button>
+      </div>`;
+
+    const listEl = panel.querySelector("#locPickList");
+    const renderList = () => {
+      const q = panel.querySelector("#locSearch").value.trim().toLowerCase();
+      const list = items.filter(it =>
+        !q || `${it.name} ${it.district || ""}`.toLowerCase().includes(q)
+      );
+      listEl.innerHTML = list.length ? list.map(it => `
+        <button class="loc-pick-row" type="button" data-loc-id="${escHTML(it.id)}">
+          <span class="level-chip">L${it.level}</span>
+          <span class="loc-pick-name">${escHTML(it.name)}</span>
+          <span class="loc-pick-sub">${escHTML(it.district || "—")} · ${Number(it.lat).toFixed(2)}, ${Number(it.lon).toFixed(2)}</span>
+        </button>`).join("") : `<div class="empty-state">未找到匹配地点</div>`;
+      listEl.querySelectorAll("[data-loc-id]").forEach(btn => {
+        btn.onclick = () => {
+          const it = items.find(x => x.id === btn.dataset.locId);
+          if (!it) return;
+          onSelect({ id: it.id, name: it.name, district: it.district || "", lat: Number(it.lat), lon: Number(it.lon) });
+          overlay.remove();
+        };
+      });
+    };
+
+    panel.querySelector("#locSearch").oninput = renderList;
+    panel.querySelector("#locCancel").onclick = () => overlay.remove();
+    panel.querySelector("#locClear").onclick = () => { onSelect(null); overlay.remove(); };
+    panel.querySelector("#locCustomOk").onclick = () => {
+      const name = panel.querySelector("#locName").value.trim();
+      const lat = Number(panel.querySelector("#locLat").value);
+      const lon = Number(panel.querySelector("#locLon").value);
+      if (!name) { toast("请填写自定义地点名称"); return; }
+      if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+        toast("经纬度不合法（纬度 ±90 / 经度 ±180）"); return;
+      }
+      onSelect({ id: "", name, district: panel.querySelector("#locDistrict").value.trim(), lat, lon });
+      overlay.remove();
+    };
+
+    getLocationChoices().then(list => {
+      items = list || [];
+      ready = true;
+      renderList();
+    }).catch(() => {
+      items = [];
+      ready = true;
+      renderList();
+    });
+    setTimeout(() => panel.querySelector("#locSearch").focus(), 80);
+    return { ready: () => ready };
+  }
 
   /* =========================================================
    *  社交模块：密语（消息） / 通讯录（联系人） / 群聊
@@ -5036,6 +5284,7 @@
    * ========================================================= */
   const SOCIAL_KEY = "sdj_social_v1";
   const SOCIAL_MSG_KEY = "sdj_social_msgs_v1";
+  const NPC_MIGRATED_KEY = "sdj_npc_friends_synced";
   const FRIEND_TIMEOUT_MS = 7 * 86400000;
   const GROUP_INVITE_TIMEOUT_MS = 24 * 3600000;
   const GROUP_JOIN_TIMEOUT_MS = 7 * 86400000;
@@ -5096,6 +5345,7 @@
     return {
       v: 1,
       friends: {},
+      npcFriends: {},
       friendRequests: [],
       groups: [],
       groupRequests: [],
@@ -5114,7 +5364,7 @@
     try { raw = JSON.parse(localStorage.getItem(SOCIAL_KEY)); } catch (e) { raw = null; }
     const base = defaultSocial();
     socialState = raw && typeof raw === "object" ? Object.assign(base, raw) : base;
-    ["friends", "reads", "presence", "friendSince", "friendTagOf"].forEach(k => {
+    ["friends", "npcFriends", "reads", "presence", "friendSince", "friendTagOf"].forEach(k => {
       if (!socialState[k] || typeof socialState[k] !== "object") socialState[k] = {};
     });
     ["friendRequests", "groups", "groupRequests", "friendTags"].forEach(k => {
@@ -5151,7 +5401,7 @@
     // 快照只同步「软的」本机数据（在线状态、已读、分组标签）与消息，
     // 避免整份快照把别人刚改好的群设置或审批状态覆盖回去。
     const soft = Object.assign({}, loadSocial());
-    ["friends", "friendRequests", "groups", "groupRequests", "groupsSeq"].forEach(k => delete soft[k]);
+    ["friends", "npcFriends", "friendRequests", "groups", "groupRequests", "groupsSeq"].forEach(k => delete soft[k]);
     return { v: 1, updatedAt: Date.now(), social: soft, msgs: loadSocialMsgs() };
   }
 
@@ -5204,13 +5454,21 @@
       if (remote.social) {
         const socialOut = remote.social;
         const local = loadSocial();
-        // NPC 没有 Auth 档案，好友关系只存在本机；拉取云端时保留这部分，避免 NPC 好友被覆盖掉
-        socialOut.friends = socialOut.friends || {};
-        Object.keys(local.friends || {}).forEach(u => {
-          const npcOnly = (local.friends[u] || []).filter(isNpcUser);
-          if (!npcOnly.length) return;
-          socialOut.friends[u] = Array.from(new Set([...(socialOut.friends[u] || []), ...npcOnly]));
-        });
+        socialOut.npcFriends = socialOut.npcFriends || {};
+        // 首次迁移前保留本机已有的 NPC 好友，避免还没上传就被云端快照覆盖
+        if (localStorage.getItem(NPC_MIGRATED_KEY) !== "1") {
+          Object.keys(local.friends || {}).forEach(u => {
+            const npcOnly = (local.friends[u] || []).filter(isNpcUser);
+            if (!npcOnly.length) return;
+            socialOut.npcFriends[u] = Array.from(new Set([...(socialOut.npcFriends[u] || []), ...npcOnly]));
+          });
+          Object.keys(local.npcFriends || {}).forEach(u => {
+            const list = local.npcFriends[u] || [];
+            if (!list.length) return;
+            socialOut.npcFriends[u] = Array.from(new Set([...(socialOut.npcFriends[u] || []), ...list]));
+          });
+        }
+        // NPC 申请历史只作本机展示，仍在拉取时保留
         const npcReqs = (local.friendRequests || []).filter(r => isNpcUser(r.to) || isNpcUser(r.from));
         if (npcReqs.length) {
           const byId = new Map();
@@ -5229,6 +5487,29 @@
       reloadSocialMsgs();
       return true;
     } catch (e) { return false; }
+  }
+
+  // 一次性迁移：把本机旧版 friends 里的 NPC 关系上传到服务端 npcFriends
+  async function syncNpcFriendsToCloud() {
+    if (!window.SDJCloud || !window.SDJCloud.enabled()) return;
+    if (localStorage.getItem(NPC_MIGRATED_KEY) === "1") return;
+    const me = currentSocialUser();
+    if (!me) return;
+    const s = loadSocial();
+    const npcList = Array.from(new Set([
+      ...(s.friends[me] || []).filter(isNpcUser),
+      ...(s.npcFriends[me] || [])
+    ]));
+    let allOk = true;
+    for (const npc of npcList) {
+      const r = await window.SDJCloud.npcFriendAdd(npc);
+      if (!r.ok) { allOk = false; break; }
+    }
+    if (!allOk) return; // 网络失败时保留本机数据，下次进入好友页再试
+    s.friends[me] = (s.friends[me] || []).filter(x => !isNpcUser(x));
+    if (npcList.length) s.npcFriends[me] = npcList;
+    try { localStorage.setItem(SOCIAL_KEY, JSON.stringify(s)); } catch (e) { /* ignore */ }
+    localStorage.setItem(NPC_MIGRATED_KEY, "1");
   }
 
   function startSocialCloudWatch() {
@@ -5294,11 +5575,31 @@
 
   /* ---------------- 好友关系 ---------------- */
   function pairKey(a, b) { return [a, b].sort().join("|"); }
-  function friendsOf(username) { return (loadSocial().friends[username] || []).slice(); }
-  function areFriends(a, b) { return (loadSocial().friends[a] || []).includes(b); }
+  function friendsOf(username) {
+    const s = loadSocial();
+    return Array.from(new Set([
+      ...(s.friends[username] || []),
+      ...(s.npcFriends[username] || [])
+    ]));
+  }
+  function areFriends(a, b) {
+    const s = loadSocial();
+    return (s.friends[a] || []).includes(b) || (s.npcFriends[a] || []).includes(b);
+  }
 
   function addFriendPair(a, b) {
     const s = loadSocial();
+    // NPC 没有 Auth 档案，关系单独存 npcFriends，服务端 RPC 负责跨设备同步
+    if (isNpcUser(b)) {
+      s.npcFriends[a] = Array.from(new Set([...(s.npcFriends[a] || []), b]));
+      if (!s.friendSince[pairKey(a, b)]) s.friendSince[pairKey(a, b)] = Date.now();
+      return;
+    }
+    if (isNpcUser(a)) {
+      s.npcFriends[b] = Array.from(new Set([...(s.npcFriends[b] || []), a]));
+      if (!s.friendSince[pairKey(a, b)]) s.friendSince[pairKey(a, b)] = Date.now();
+      return;
+    }
     s.friends[a] = Array.from(new Set([...(s.friends[a] || []), b]));
     s.friends[b] = Array.from(new Set([...(s.friends[b] || []), a]));
     if (!s.friendSince[pairKey(a, b)]) s.friendSince[pairKey(a, b)] = Date.now();
@@ -5310,7 +5611,9 @@
     if (!me || !username) return { ok: false, error: "参数错误" };
     if (!areFriends(me, username)) return { ok: false, error: "你们还不是好友" };
     if (window.SDJCloud && window.SDJCloud.enabled()) {
-      const r = await window.SDJCloud.friendRemove(username);
+      const r = isNpcUser(username)
+        ? await window.SDJCloud.npcFriendRemove(username)
+        : await window.SDJCloud.friendRemove(username);
       if (!r.ok) return r;
       await pullSocialCloud();
       emitSocial();
@@ -5319,6 +5622,8 @@
     const s = loadSocial();
     s.friends[me] = (s.friends[me] || []).filter(x => x !== username);
     s.friends[username] = (s.friends[username] || []).filter(x => x !== me);
+    s.npcFriends[me] = (s.npcFriends[me] || []).filter(x => x !== username);
+    s.npcFriends[username] = (s.npcFriends[username] || []).filter(x => x !== me);
     delete s.friendSince[pairKey(me, username)];
     saveSocial();
     return { ok: true };
@@ -5381,6 +5686,10 @@
       pushSystemMsg(cid, "你们已成为好友，开始对话吧");
     }
     saveSocial();
+    // NPC 好友关系写入服务端，其他设备登录后可看到同一位 NPC 好友
+    if (accept && isNpcUser(req.to) && window.SDJCloud && window.SDJCloud.enabled()) {
+      window.SDJCloud.npcFriendAdd(req.to).then(() => pullSocialCloud()).catch(() => {});
+    }
     if (!isNpcUser(req.from)) {
       pushNotification(req.from, accept ? nameOf(req.to) + " 已同意你的好友申请" : nameOf(req.to) + " 拒绝了你的好友申请");
     }
@@ -5979,7 +6288,7 @@
     reloadSocial();
     if (!socialCloudPulled && window.SDJCloud && window.SDJCloud.enabled()) {
       socialCloudPulled = true;
-      pullSocialCloud().then(changed => {
+      syncNpcFriendsToCloud().then(() => pullSocialCloud()).then(changed => {
         if (changed && currentMenuId === "friend") socialRerender(false);
       });
     }
@@ -7267,6 +7576,7 @@
     removeFriendTag: removeFriendTag,
     groupById: groupById,
     groupLists: contactGroupLists,
+    friendsOf: friendsOf,
     messages: () => loadSocialMsgs(),
     socialInitial: socialInitial,
     users: socialDirectory,
@@ -7777,6 +8087,15 @@
     view: (missionId) => openMissionDetail(missionId),
     create: (locationId, locationName) => openMissionEditor(null, { locationId, locationName })
   };
+
+  // 帖子位置标记 → 打开地图并聚焦对应地点
+  function goToPostLocation(postId) {
+    const p = (loadState().forum || []).find(x => x.id === postId);
+    if (!p || !p.location) { toast("该帖子没有位置标记"); return; }
+    pendingMapLocation = p.location;
+    pendingMenu = "map";
+    navigate("/app");
+  }
 
   function renderPlaceholderPage(container) {
     const configKey = viewRole === "admin" ? "admin" : "player";
