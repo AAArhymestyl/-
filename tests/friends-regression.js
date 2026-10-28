@@ -217,6 +217,14 @@
         !api().load().friends[B].includes(A));
       ok("F22b 已不是好友时删除被拦截", (await api().removeFriend(B)).ok === false);
 
+      /* F25 NPC 好友走独立存储，不再混在真实用户好友表里 */
+      const s25 = api().load();
+      s25.npcFriends[A] = [N1];
+      api().save();
+      ok("F25 NPC 好友计入好友列表", api().friendsOf(A).includes(N1));
+      ok("F25b 删除 NPC 好友后从列表移除",
+        (await api().removeFriend(N1)).ok === true && !api().friendsOf(A).includes(N1));
+
       /* F23 群设置逐字段原子更新（后写覆盖前写） */
       const r23a = await api().updateGroup(gg.id, A, "notice", "第一次公告");
       const r23b = await api().updateGroup(gg.id, A, "notice", "最后一次公告");
