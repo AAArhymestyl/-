@@ -432,6 +432,30 @@ import * as THREE from 'three';
       });
     }
 
+    // 帖子自定义坐标：地图上没有对应地点时，临时显示一个标记并聚焦
+    showTemporaryMarker(loc) {
+      if (!loc || !Number.isFinite(Number(loc.lat)) || !Number.isFinite(Number(loc.lon))) return;
+      const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+      if (this._tempMarker) {
+        this.labelGroup.remove(this._tempMarker);
+        this._tempMarker = null;
+      }
+      const div = document.createElement('div');
+      div.className = 'map-label label-l3 temp-marker';
+      div.innerHTML = `
+        <div class="label-text">${esc(loc.name || '帖子标记')}<span class="label-district">帖子位置</span></div>
+        <div class="label-line"></div>
+        <div class="label-dot"></div>`;
+      const label = new CSS2DObject(div);
+      label.position.copy(this.getPos(Number(loc.lat), Number(loc.lon), 1.05));
+      label.userData = Object.assign({ level: 3, desc: '来自论坛帖子的位置标记。' }, loc);
+      div.addEventListener('click', (e) => { e.stopPropagation(); this.onLabelClick(label); });
+      this.labelGroup.add(label);
+      this._tempMarker = label;
+      this.onLabelClick(label);
+      this.flyToTarget(label);
+    }
+
     // 🚨 核心修复：使用 getWorldPosition 确保追踪目标准确
     flyToTarget(label) {
       if (this.isAnimating) return;
@@ -843,6 +867,13 @@ import * as THREE from 'three';
           if (o.material) o.material.dispose();
         });
         this.missionGroup = null;
+      }
+      if (this._tempMarker) {
+        if (this._tempMarker.element && this._tempMarker.element.parentNode) {
+          this._tempMarker.element.parentNode.removeChild(this._tempMarker.element);
+        }
+        this.labelGroup.remove(this._tempMarker);
+        this._tempMarker = null;
       }
       this.ripples = [];
       this.missionAnchors = [];
