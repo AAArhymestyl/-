@@ -268,13 +268,16 @@
   }
 
   async function getForumPost(id) {
-    if (!enabled()) return null;
+    if (!enabled()) return { ok: false, error: "云端未配置" };
     try {
       const c = await ensureClient();
       const { data, error } = await c.from("forum_posts").select("*").eq("id", id).maybeSingle();
       if (error) throw error;
-      return data ? postRow(data) : null;
-    } catch (e) { console.warn("[云端] 读取帖子失败：", e); return null; }
+      return { ok: true, post: data ? postRow(data) : null };
+    } catch (e) {
+      console.warn("[云端] 读取帖子失败：", e);
+      return { ok: false, error: String(e.message || e) };
+    }
   }
 
   // 论坛配图：真实上传到 Supabase Storage 的 forum-images 桶
