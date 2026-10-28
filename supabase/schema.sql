@@ -1827,20 +1827,27 @@ begin
     into v_reqs from jsonb_array_elements(v_reqs) r;
   v_social := jsonb_set(v_social, array['groupRequests'], v_reqs, true);
 
-  if v_ok then
-    v_members := coalesce(v_g->'members', '[]'::jsonb);
-    if not (v_members ? v_joiner) then
-      v_members := v_members || jsonb_build_array(to_jsonb(v_joiner));
-    end if;
-    v_g := v_g || jsonb_build_object('members', v_members);
-    -- 全部受邀方同意、人数达到 3 人时立即成立（此前云端的群会一直停在组建中）
-    if coalesce(v_g->>'status', '') = 'inviting' and jsonb_array_length(v_members) >= 3 then
-      v_g := v_g || jsonb_build_object('status', 'active', 'activatedAt', v_now);
-    end if;
-    select coalesce(jsonb_agg(case when x->>'id' = v_g->>'id' then v_g else x end), '[]'::jsonb)
-      into v_groups from jsonb_array_elements(v_groups) x;
-    v_social := jsonb_set(v_social, array['groups'], v_groups, true);
+  v_members := coalesce(v_g->'members', '[]'::jsonb);
+  if v_ok and not (v_members ? v_joiner) then
+    v_members := v_members || jsonb_build_array(to_jsonb(v_joiner));
   end if;
+  v_g := v_g || jsonb_build_object('members', v_members);
+
+  -- 组建中的群：人数满 3 立即成立；若已无待处理邀请则判定创建失败
+  if coalesce(v_g->>'status', '') = 'inviting' then
+    if jsonb_array_length(v_members) >= 3 then
+      v_g := v_g || jsonb_build_object('status', 'active', 'activatedAt', v_now);
+    elsif not exists (
+      select 1 from jsonb_array_elements(v_reqs) r
+       where r->>'groupId' = v_g->>'id' and r->>'type' = 'invite' and r->>'status' = 'pending'
+    ) then
+      v_g := v_g || jsonb_build_object('status', 'failed', 'failedAt', v_now);
+    end if;
+  end if;
+
+  select coalesce(jsonb_agg(case when x->>'id' = v_g->>'id' then v_g else x end), '[]'::jsonb)
+    into v_groups from jsonb_array_elements(v_groups) x;
+  v_social := jsonb_set(v_social, array['groups'], v_groups, true);
 
   v_data := jsonb_set(v_data, array['social'], v_social, true);
   v_data := jsonb_set(v_data, array['updatedAt'], to_jsonb(v_now), true);
