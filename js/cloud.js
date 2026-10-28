@@ -222,6 +222,9 @@
     // section / author_role / views / essence 是跨设备保留版块与加精状态的关键字段
     section: r.section || "", authorRole: r.author_role || "",
     views: Number(r.views) || 0, essence: !!r.essence,
+    images: Array.isArray(r.images) ? r.images.filter(Boolean) : [],
+    location: r.location && typeof r.location === "object" ? r.location : null,
+    viewedBy: Array.isArray(r.viewed_by) ? r.viewed_by.filter(Boolean) : [],
     createdAt: r.created_at ? new Date(r.created_at).getTime() : 0,
     comments: Array.isArray(r.comments) ? r.comments : [],
     likedBy: Array.isArray(r.liked_by) ? r.liked_by.map(x => x && x.username).filter(Boolean) : []
@@ -242,17 +245,19 @@
     } catch (e) { console.warn("[云端] 读取论坛失败：", e); return null; }
   }
 
-  async function addForumPost({ author, title, body, section, authorRole }) {
+  async function addForumPost({ author, title, body, section, authorRole, images, location }) {
     if (!enabled()) return null;
     try {
       const c = await ensureClient();
       const { data: sess } = await c.auth.getSession();
       const uid = sess && sess.session ? sess.session.user.id : null;
       const payload = { author, title, body, author_id: uid };
-      // 新库带 section / author_role 列；老库未执行最新 schema 时自动退回基础字段
+      // 新库带扩展列；老库未执行最新 schema 时自动退回基础字段
       const extended = Object.assign({}, payload);
       if (section) extended.section = section;
       if (authorRole) extended.author_role = authorRole;
+      if (Array.isArray(images) && images.length) extended.images = images;
+      if (location) extended.location = location;
       let res = await c.from("forum_posts").insert(extended).select().single();
       if (res.error && /column .* does not exist/i.test(res.error.message || "")) {
         res = await c.from("forum_posts").insert(payload).select().single();
@@ -260,6 +265,39 @@
       if (res.error) throw res.error;
       return postRow(res.data);
     } catch (e) { console.warn("[云端] 发帖失败：", e); return null; }
+  }
+
+  async function getForumPost(id) {
+    if (!enabled()) return null;
+    try {
+      const c = await ensureClient();
+      const { data, error } = await c.from("forum_posts").select("*").eq("id", id).maybeSingle();
+      if (error) throw error;
+      return data ? postRow(data) : null;
+    } catch (e) { console.warn("[云端] 读取帖子失败：", e); return null; }
+  }
+
+  // 论坛配图：真实上传到 Supabase Storage 的 forum-images 桶
+  async function uploadForumImage(file) {
+    if (!enabled()) return { ok: false, error: "云端未配置" };
+    try {
+      const c = await ensureClient();
+      const { data: sess } = await c.auth.getSession();
+      const uid = sess && sess.session ? sess.session.user.id : null;
+      if (!uid) return { ok: false, error: "请先登录后再上传图片" };
+      const extMatch = String(file.name || "").match(/\.[a-z0-9]+$/i);
+      const ext = extMatch ? extMatch[0].toLowerCase() : ".jpg";
+      const path = `${uid}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
+      const { error } = await c.storage.from("forum-images").upload(path, file, {
+        cacheControl: "31536000", upsert: false, contentType: file.type || "image/jpeg"
+      });
+      if (error) throw error;
+      const { data } = c.storage.from("forum-images").getPublicUrl(path);
+      return { ok: true, url: data.publicUrl, path };
+    } catch (e) {
+      console.warn("[云端] 图片上传失败：", e);
+      return { ok: false, error: translate(e.message || String(e)) };
+    }
   }
 
   // 加精 / 取消加精：此前只改本地，刷新后丢失
@@ -471,6 +509,9 @@
     rpc("social_group_dissolve", { p_group_id: groupId });
   const friendRemove = (friend) =>
     rpc("social_friend_remove", { p_friend: friend });
+  const npcFriendAdd = (npc) => rpc("social_npc_friend_add", { p_npc: npc });
+  const npcFriendRemove = (npc) => rpc("social_npc_friend_remove", { p_npc: npc });
+  const addForumView = (postId) => rpc("forum_view_add", { p_post_id: postId });
   const banMember = (username, banned, note) =>
     rpc("member_ban", { p_username: username, p_banned: !!banned, p_note: note || "" });
   const isOwner = () => !!(profile && profile.owner);
@@ -517,6 +558,9 @@
     saveMap,
     listForum,
     addForumPost,
+    getForumPost,
+    uploadForumImage,
+    addForumView,
     setForumEssence,
     setForumLikes,
     removeForumPost,
@@ -547,6 +591,8 @@
     groupRemoveMember,
     groupDissolve,
     friendRemove,
+    npcFriendAdd,
+    npcFriendRemove,
     banMember,
     isOwner,
     submitRegistration,
