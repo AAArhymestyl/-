@@ -410,6 +410,18 @@
     report("A10 两笔审批都有系统动态", sysActs.length >= 2, sysActs.length);
     const notes = (after.notifications || []).filter((n) => String(n.text || "").indexOf("联调测试委托") >= 0);
     report("A11 两位申请人都收到结算通知", notes.length >= 2, notes.length);
+
+    /* A12–A13：主控台快捷「发布全服广播」必须跳到成员管理页的同一广播栏 */
+    const dashMenu = doc.querySelector('.menu-item[data-id="dashboard"]');
+    if (dashMenu) { dashMenu.click(); await sleep(600); }
+    const quickBc = doc.querySelector('.action-btn[data-action="0"]');
+    report("A12 主控台存在快捷广播入口", !!quickBc, !!quickBc);
+    if (quickBc) { quickBc.click(); await sleep(1200); }
+    const bcInput = doc.querySelector("#broadcastInput");
+    const memberActive = doc.querySelector('.menu-item[data-id="member"]');
+    report("A13 快捷广播跳转成员页广播栏并聚焦",
+      !!bcInput && !!memberActive && memberActive.classList.contains("active") && doc.activeElement === bcInput,
+      (memberActive ? memberActive.className : "missing") + " / " + (doc.activeElement ? doc.activeElement.id : "none"));
   }
 
   async function phase4() {
