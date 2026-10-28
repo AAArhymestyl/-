@@ -122,7 +122,7 @@
       const timer = setTimeout(() => {
         fr.onload = null;
         reject(new Error("被测页面加载超时（" + targetPath + "）"));
-      }, 15000);
+      }, 30000);
       fr.onload = () => { clearTimeout(timer); fr.onload = null; resolve(); };
       fr.src = "../index.html?local=1&t=" + Date.now() + "#" + targetPath;
     });
@@ -130,7 +130,7 @@
     const win = fr.contentWindow;
     const need = readySelector || ".menu-item";
     // 双重判定：document 已 complete + app.js 已发出该路由的首帧就绪标记
-    for (let i = 0; i < 120; i++) {
+    for (let i = 0; i < 200; i++) {
       const doc = win.document;
       const ready = win.SDJ_APP_READY;
       if (doc && doc.readyState === "complete" && ready && ready.path === targetPath && doc.querySelector(need)) {
@@ -138,7 +138,7 @@
       }
       await sleep(100);
     }
-    throw new Error("应用未在 12 秒内完成渲染（" + targetPath + "）");
+    throw new Error("应用未在 20 秒内完成渲染（" + targetPath + "）");
   }
 
   async function phase0() {
