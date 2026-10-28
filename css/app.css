@@ -269,7 +269,22 @@
   .info-desc { font-size: 13px; color: var(--fg-dim); line-height: 1.6; }
   .info-task { background: rgba(232,17,35,0.1); border: 1px solid var(--accent-deep); padding: 12px; border-radius: 4px; }
   .info-task-title { font-size: 12px; color: var(--accent-bright); font-weight: bold; margin-bottom: 4px; }
-  .info-task-desc { font-size: 12px; color: #fff; }
+  .info-task-desc { font-size: 12px; color: #fff; max-height: 260px; overflow: auto; }
+  .map-mission-list { display: flex; flex-direction: column; gap: 8px; }
+  .map-mission { border: 1px solid rgba(255,255,255,0.09); background: rgba(0,0,0,0.28); padding: 8px; border-radius: 4px; }
+  .map-mission .mm-head { display: flex; align-items: center; gap: 6px; }
+  .map-mission .mm-level { font-size: 10px; border: 1px solid; padding: 0 4px; border-radius: 3px; line-height: 16px; }
+  .map-mission .mm-title { flex: 1; font-size: 12px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .map-mission .mm-state { font-size: 10px; color: #ffb300; white-space: nowrap; }
+  .map-mission .mm-meta { font-size: 10px; color: #9a9a9a; margin-top: 4px; line-height: 1.5; }
+  .map-mission .mm-ops { display: flex; gap: 6px; align-items: center; justify-content: flex-end; margin-top: 6px; }
+  .map-mission .mm-btn { padding: 3px 9px; font-size: 11px; background: #8a0a14; border: 1px solid #e81123; color: #fff; border-radius: 3px; cursor: pointer; }
+  .map-mission .mm-btn:hover { background: #e81123; }
+  .map-mission .mm-btn.ghost { background: transparent; border-color: rgba(255,255,255,0.24); color: #ddd; }
+  .map-mission .mm-note { font-size: 10px; color: #8f8f8f; }
+  .map-mission-empty { font-size: 11px; color: #9a9a9a; line-height: 1.6; }
+  .map-mission-new { width: 100%; margin-top: 8px; padding: 6px; font-size: 12px; cursor: pointer; border-radius: 4px; color: #ffca28; background: rgba(255,179,0,0.12); border: 1px dashed #ffb300; }
+  .map-mission-new:hover { background: #ffb300; color: #000; }
   .info-btn { width: 100%; padding: 10px; background: linear-gradient(180deg, #4a0000 0%, #110000 100%); border: 1px solid var(--accent); color: #fff; font-size: 14px; cursor: pointer; text-align: center; transition: all 0.2s; }
   .info-btn:hover { background: #e81123; box-shadow: 0 0 15px #e81123; }
 
