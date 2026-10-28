@@ -1523,6 +1523,41 @@
     }
   }
 
+  // 注册审批落库：只提交「注册申请 + 通知 + 动态」三列，并基于云端最新数组改写
+  // 避免整行 upsert 把别人刚提交、本机还没同步到的申请一起覆盖掉
+  async function persistRegistrationReview(target, status, note) {
+    const cloud = !!(window.SDJCloud && window.SDJCloud.enabled());
+    const sess = getSession();
+    if (!cloud || !sess || sess.role !== "admin") {
+      saveState();
+      return true;
+    }
+    try {
+      const world = await window.SDJCloud.loadWorld();
+      const list = (world && Array.isArray(world.registration_requests))
+        ? world.registration_requests.slice()
+        : (appState.registrationRequests || []).slice();
+      const it = list.find(x => x.id === target.id) || list.find(x => x.username === target.username);
+      if (it) {
+        it.status = status;
+        it.reviewedAt = Date.now();
+        it.note = note || "";
+      }
+      await window.SDJCloud.saveWorld({
+        registration_requests: list,
+        notifications: appState.notifications,
+        activity_log: appState.activityLog
+      });
+      appState.registrationRequests = list;
+      try { localStorage.setItem(STATE_KEY, JSON.stringify(appState)); } catch (e) {}
+      worldStamp = "";
+      return true;
+    } catch (err) {
+      console.warn("[云端] 注册审批写入失败：", err);
+      return false;
+    }
+  }
+
   function closeActionDialog() {
     const old = document.getElementById("actionModal");
     if (old) old.remove();
@@ -7008,7 +7043,7 @@
         pushNotification(r.username, "你的注册申请已通过管理者审批。");
         pushSystemActivity(`管理者通过了 ${r.displayName} 的${registerRoleLabel(r.role)}注册申请`, "approval");
         // 关键动作必须等云端确认结果，不能只依赖 800ms 防抖
-        const ok = await pushWorldNow();
+        const ok = await persistRegistrationReview(r, "approved", "");
         renderApprovalPage(container);
         toast(ok
           ? `已同意 ${r.displayName} 的${registerRoleLabel(r.role)}注册申请`
@@ -7029,7 +7064,7 @@
         r.note = note || "未填写原因";
         pushNotification(r.username, `你的注册申请被驳回：${r.note}`);
         pushSystemActivity(`管理者驳回了 ${r.displayName} 的注册申请：${r.note}`, "approval");
-        const ok = await pushWorldNow();
+        const ok = await persistRegistrationReview(r, "rejected", r.note);
         renderApprovalPage(container);
         toast(ok
           ? `已拒绝 ${r.displayName} 的注册申请`
