@@ -2,7 +2,7 @@
 import * as THREE from 'three';
   import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
   import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-  import { SEED_LOCATIONS, AREA_LABELS } from './locations.js?v=2';
+  import { SEED_LOCATIONS, AREA_LABELS } from './locations.js?v=3';
 
   const MAP_STORE_KEY = 'sdj_map_data_v2';
 
@@ -197,17 +197,28 @@ import * as THREE from 'three';
       try { store = JSON.parse(localStorage.getItem(MAP_STORE_KEY)); } catch (e) { store = null; }
 
       const seeds = SEED_LOCATIONS.concat(AREA_LABELS);
+      // 统一清洗：地点只保留地理字段，历史上的演示任务 task 一律剔除
+      const cleanLoc = (it) => {
+        const copy = Object.assign({}, it);
+        delete copy.task;
+        return copy;
+      };
       if (store && Array.isArray(store.items)) {
         const removed = Array.isArray(store.removed) ? store.removed : [];
         const savedIds = new Set(store.items.map(i => i.id));
         // 已保存的地点保留管理员改动；新增的种子地点自动补齐；被删除的种子不复活
-        this.labelsData = store.items.slice();
+        this.labelsData = store.items.map(cleanLoc);
         seeds.forEach(seed => {
-          if (!savedIds.has(seed.id) && !removed.includes(seed.id)) this.labelsData.push(seed);
+          if (!savedIds.has(seed.id) && !removed.includes(seed.id)) this.labelsData.push(cleanLoc(seed));
         });
       } else {
-        this.labelsData = seeds.slice();
+        this.labelsData = seeds.map(cleanLoc);
         this._removedIds = [];
+        this.saveMapData();
+      }
+
+      // 本地缓存里残留的 task 字段只清一次；管理员会顺带把干净数据推回云端
+      if (store && Array.isArray(store.items) && store.items.some(i => i && i.task !== undefined)) {
         this.saveMapData();
       }
 
@@ -282,28 +293,143 @@ import * as THREE from 'three';
     onLabelClick(label) {
       const data = label.userData;
       document.getElementById('infoTitle').textContent = data.name;
-      document.getElementById('infoDesc').textContent = data.desc;
-      document.getElementById('infoTaskDesc').textContent = data.task;
+      document.getElementById('infoDesc').textContent = data.desc || '暂无地点描述。';
       const geo = document.getElementById('infoGeo');
       if (geo) {
         geo.textContent = `${data.district ? data.district + ' · ' : ''}L${data.level} · ${Number(data.lat).toFixed(2)}, ${Number(data.lon).toFixed(2)}`;
       }
       document.getElementById('infoPanel').classList.add('show');
+      this._activeLoc = data;
+      this.renderLocationMissions(data);
 
+      // 旧的「一键接取」按钮不再使用：同一点位允许存在多个委托，统一在任务列表里逐条操作
       const acceptBtn = document.getElementById('btnAcceptTask');
-      if (acceptBtn) {
-        acceptBtn.disabled = false;
-        acceptBtn.textContent = '接取该地点委托';
-        acceptBtn.onclick = () => {
-          if (window.SDJ && typeof window.SDJ.acceptMission === 'function') {
-            window.SDJ.acceptMission(data.name, data.task, acceptBtn);
-          }
-        };
-      }
+      if (acceptBtn) { acceptBtn.hidden = true; acceptBtn.onclick = null; }
 
       document.getElementById('btnTrack').onclick = () => {
         this.flyToTarget(label);
       };
+    }
+
+    /* ---------- 地点 ↔ 真实委托列表（支持一个地点多条委托） ---------- */
+    missionsAt(loc) {
+      if (!loc) return [];
+      const name = String(loc.name || '').trim();
+      return this.getMissions().filter(m => {
+        if (m.locationId) return m.locationId === loc.id;
+        return String(m.loc || '').trim() === name;
+      });
+    }
+
+    missionStatusText(m) {
+      const left = m.deadline && m.deadline.endsAt ? m.deadline.endsAt - Date.now() : null;
+      if (left !== null && left <= 0 && m.status !== 'done') return '已截止';
+      return ({
+        available: '可接取', active: '进行中', review: '待审批',
+        done: '已完成', failed: '已失败', expired: '已截止'
+      })[m.status] || m.status || '未知';
+    }
+
+    missionRewardText(m) {
+      const r = m && m.reward;
+      if (!r) return '未设定';
+      if (typeof r === 'string') return r;
+      if (r.type === 'item') return (r.itemName || '道具') + (r.rarity ? '（' + r.rarity + '）' : '');
+      return '计划点 ×' + (Number(r.points) || 0);
+    }
+
+    missionDeadlineText(m) {
+      const dl = m && m.deadline;
+      if (!dl || !dl.endsAt) return '长期有效';
+      const d = new Date(dl.endsAt);
+      const p = n => String(n).padStart(2, '0');
+      return `截止 ${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    }
+
+    renderLocationMissions(loc) {
+      const box = document.getElementById('infoTaskDesc');
+      if (!box) return;
+      this._activeLoc = loc;
+      const isAdmin = this.userRole === 'admin';
+      const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+      const palette = this.missionPalette();
+      const sess = (window.SDJSession && typeof window.SDJSession.current === 'function')
+        ? window.SDJSession.current() : null;
+      const me = sess ? (sess.username || sess.displayName) : '';
+
+      const list = this.missionsAt(loc);
+      const newBtn = isAdmin
+        ? `<button class="map-mission-new" data-map-new>＋ 在此地点新增委托</button>` : '';
+
+      if (!list.length) {
+        box.innerHTML = `<div class="map-mission-empty">${isAdmin
+          ? '该地点暂时没有委托，点下方按钮即可在这里发布。'
+          : '等待管理者发布委托。'}</div>${newBtn}`;
+        this.bindMissionActions(box);
+        return;
+      }
+
+      box.innerHTML = `<div class="map-mission-list">${list.map(m => {
+        const meta = palette[m.level] || { color: '#ddd', label: m.level };
+        const acc = (m.acceptors || []).filter(a => a && a.username);
+        const full = acc.length >= (m.slots || 1);
+        const accepted = acc.some(a => a.username === me);
+        const expired = m.deadline && m.deadline.endsAt && Date.now() > m.deadline.endsAt;
+        let ops = '';
+        if (isAdmin) {
+          const locked = acc.length > 0;
+          ops = `<button class="mm-btn ghost" data-map-view="${esc(m.id)}">查看</button>` +
+            (locked ? '' : `<button class="mm-btn" data-map-edit="${esc(m.id)}">编辑</button>`);
+        } else {
+          if (accepted) ops = `<span class="mm-note">已接取</span>`;
+          else if (m.status === 'available' && !full && !expired) {
+            ops = `<button class="mm-btn" data-map-accept="${esc(m.id)}">接取</button>`;
+          } else if (full) ops = `<span class="mm-note">名额已满</span>`;
+          else ops = `<span class="mm-note">${esc(this.missionStatusText(m))}</span>`;
+        }
+        return `<div class="map-mission status-${esc(m.status || 'available')}">
+          <div class="mm-head">
+            <span class="mm-level" style="color:${meta.color};border-color:${meta.color}">${esc(m.level)}</span>
+            <span class="mm-title">${esc(m.title)}</span>
+            <span class="mm-state">${esc(this.missionStatusText(m))}</span>
+          </div>
+          <div class="mm-meta">奖励 ${esc(this.missionRewardText(m))} · 名额 ${acc.length}/${m.slots || 1} · ${esc(this.missionDeadlineText(m))}</div>
+          <div class="mm-ops">${ops}</div>
+        </div>`;
+      }).join('')}</div>${newBtn}`;
+      this.bindMissionActions(box);
+    }
+
+    bindMissionActions(box) {
+      box.querySelectorAll('[data-map-accept]').forEach(btn => {
+        btn.onclick = () => {
+          if (window.SDJMapActions && typeof window.SDJMapActions.accept === 'function') {
+            window.SDJMapActions.accept(btn.dataset.mapAccept, btn);
+          }
+        };
+      });
+      box.querySelectorAll('[data-map-edit]').forEach(btn => {
+        btn.onclick = () => {
+          if (window.SDJMapActions && typeof window.SDJMapActions.edit === 'function') {
+            window.SDJMapActions.edit(btn.dataset.mapEdit);
+          }
+        };
+      });
+      box.querySelectorAll('[data-map-view]').forEach(btn => {
+        btn.onclick = () => {
+          if (window.SDJMapActions && typeof window.SDJMapActions.view === 'function') {
+            window.SDJMapActions.view(btn.dataset.mapView);
+          }
+        };
+      });
+      box.querySelectorAll('[data-map-new]').forEach(btn => {
+        btn.onclick = () => {
+          const loc = this._activeLoc;
+          if (loc && window.SDJMapActions && typeof window.SDJMapActions.create === 'function') {
+            window.SDJMapActions.create(loc.id, loc.name);
+          }
+        };
+      });
     }
 
     // 🚨 核心修复：使用 getWorldPosition 确保追踪目标准确
@@ -614,6 +740,10 @@ import * as THREE from 'three';
 
     refreshMissions() {
       this.buildMissionMarkers();
+      if (this._activeLoc) {
+        const still = (this.labelsData || []).find(i => i.id === this._activeLoc.id);
+        if (still) this.renderLocationMissions(still);
+      }
     }
 
     animate() {
