@@ -444,6 +444,69 @@
     report("B4 计划点余额显示结算后数值", shown === String(walletPoints), shown + " / " + walletPoints);
   }
 
+  async function phaseForum() {
+    heading("阶段五 · 论坛浏览量 / 图片 / 位置标记");
+    const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WLcZ1cAAAAASUVORK5CYII=";
+    const st = readState();
+    st.forum = (st.forum || []).filter((p) => p.id !== "test_forum_post");
+    st.forum.unshift({
+      id: "test_forum_post", author: "月影", authorUsername: "AAAwe", authorRole: "player",
+      section: "daily", title: "论坛联调测试帖", body: "用于验证浏览量、图片、位置标记。",
+      time: "刚刚", createdAt: Date.now(), likes: 0, liked: false,
+      views: 0, viewedBy: [], images: [PNG],
+      location: { id: "a_l3_01", name: "趣园居（高级住宅区）", district: "A区", lat: 30.53, lon: -100.714 },
+      comments: [], essence: false, pinned: false
+    });
+    localStorage.setItem(STATE_KEY, JSON.stringify(st));
+
+    try {
+      let win = await bootApp("player", "/forum/post/test_forum_post", ".forum-detail");
+      await sleep(300);
+      let post = (readState().forum || []).find((p) => p.id === "test_forum_post");
+      report("V1 首次进入帖子浏览数 +1", !!post && post.views === 1 && post.viewedBy.indexOf("AAAwe") >= 0,
+        post ? post.views + "/" + (post.viewedBy || []).join(",") : "missing");
+      report("V2 详情页渲染配图与位置标记",
+        !!win.document.querySelector(".detail-image") && !!win.document.querySelector(".detail-loc"),
+        win.document.querySelectorAll(".detail-image").length + "/" + !!win.document.querySelector(".detail-loc"));
+
+      win = await bootApp("player", "/forum/post/test_forum_post", ".forum-detail");
+      await sleep(300);
+      post = (readState().forum || []).find((p) => p.id === "test_forum_post");
+      report("V3 同一账号重复浏览不重复计数", !!post && post.views === 1, post ? post.views : "missing");
+
+      win = await bootApp("contractor", "/forum/post/test_forum_post", ".forum-detail");
+      await sleep(300);
+      post = (readState().forum || []).find((p) => p.id === "test_forum_post");
+      report("V4 另一账号浏览后浏览量 +1", !!post && post.views === 2 && post.viewedBy.indexOf("AAAwer") >= 0,
+        post ? post.views + "/" + (post.viewedBy || []).join(",") : "missing");
+
+      win = await bootApp("admin");
+      const doc = win.document;
+      doc.querySelector('.menu-item[data-id="forum"]').click();
+      await sleep(800);
+      report("V5 管理者可对帖子加精与删帖",
+        !!doc.querySelector('[data-essence="test_forum_post"]') && !!doc.querySelector('[data-del="test_forum_post"]'),
+        doc.querySelectorAll("[data-essence]").length + "/" + doc.querySelectorAll("[data-del]").length);
+
+      win = await bootApp("player", "/forum/new", ".forum-editor");
+      const nd = win.document;
+      report("V6 发帖页接入真实图片与位置入口",
+        !!nd.querySelector('#npImageInput[type="file"]') && !!nd.querySelector("#npLocation"),
+        !!nd.querySelector("#npImageInput") + "/" + !!nd.querySelector("#npLocation"));
+      nd.querySelector("#npLocation").click();
+      await sleep(900);
+      report("V7 位置选择器可列出地图地点",
+        !!nd.querySelector("#postLocModal") && nd.querySelectorAll(".loc-pick-row").length > 0,
+        nd.querySelectorAll(".loc-pick-row").length);
+      const cancel = nd.querySelector("#locCancel");
+      if (cancel) cancel.click();
+    } finally {
+      const s2 = readState();
+      s2.forum = (s2.forum || []).filter((p) => p.id !== "test_forum_post");
+      localStorage.setItem(STATE_KEY, JSON.stringify(s2));
+    }
+  }
+
   async function main() {
     snapshot();
     try {
@@ -453,6 +516,7 @@
       await phase2b();
       await phase3();
       await phase4();
+      await phaseForum();
     } catch (err) {
       report("测试执行异常", false, err && err.message ? err.message : String(err));
     } finally {
