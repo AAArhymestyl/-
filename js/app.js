@@ -1051,6 +1051,7 @@
       }
     };
     renderNotify();
+    notifyRefreshHook = renderNotify;
 
     const unreadCount = myNotifications().filter(n => !n.read).length;
     if (unreadCount) setTimeout(() => toast(`你有 ${unreadCount} 条未读通告`), 800);
@@ -1170,6 +1171,7 @@
     renderSidebar();
     renderContent();
     startWorldCloudWatch();
+    startSocialCloudWatch();
     
     window._cleanupMainApp = () => { 
       clearInterval(clockInterval); 
@@ -1177,6 +1179,8 @@
       stopDashboardClock();
       stopRealtime();
       stopWorldCloudWatch();
+      stopSocialCloudWatch();
+      notifyRefreshHook = null;
       stopForumTimers();
       stopSocial();
       if (onDocClick) { document.removeEventListener("click", onDocClick); onDocClick = null; }
@@ -1470,29 +1474,36 @@
     return items.filter(it => Number(it.level) >= 2);
   }
 
+  // 全服数据的完整快照：任何一处漏字段都会让 upsert 整条失败，集中在这里维护
+  function worldPatchSnapshot() {
+    return {
+      missions: appState.missions,
+      items: appState.items,
+      members: appState.members,
+      council: appState.council,
+      codex: appState.codex,
+      bag: appState.bag,
+      cards: appState.cards,
+      activity_log: appState.activityLog,
+      system_alerts: appState.systemAlerts,
+      mission_reports: appState.missionReports,
+      registration_requests: appState.registrationRequests,
+      wallets: appState.wallets,
+      notifications: appState.notifications,
+      friends: appState.friends,
+      settings: appState.settings
+    };
+  }
+
+  // 立即写入云端并返回是否成功：审批这类关键动作必须知道结果，不能只依赖 800ms 防抖
   async function pushWorldNow() {
-    saveState();
     const cloud = !!(window.SDJCloud && window.SDJCloud.enabled());
     const sess = getSession();
+    const patch = worldPatchSnapshot();
+    try { localStorage.setItem(STATE_KEY, JSON.stringify(appState)); } catch (e) {}
     if (!cloud || !sess || sess.role !== "admin") return true;
     try {
-      await window.SDJCloud.saveWorld({
-        missions: appState.missions,
-        items: appState.items,
-        members: appState.members,
-        council: appState.council,
-        codex: appState.codex,
-        bag: appState.bag,
-        cards: appState.cards,
-        activity_log: appState.activityLog,
-        system_alerts: appState.systemAlerts,
-        mission_reports: appState.missionReports,
-        registration_requests: appState.registrationRequests,
-        wallets: appState.wallets,
-        notifications: appState.notifications,
-        friends: appState.friends,
-        settings: appState.settings
-      });
+      await window.SDJCloud.saveWorld(patch);
       return true;
     } catch (err) {
       console.warn("[云端] 同步失败：", err);
@@ -2766,27 +2777,61 @@
 
   // 全服数据（委托 / 卡牌 / 动态 / 审批等）跨设备实时同步
   let worldCloudChannel = null;
+  let worldPollTimer = null;
+  let worldSyncBusy = false;
+  let worldStamp = "";
+  let notifyRefreshHook = null;   // renderNotify 属于主界面闭包，这里用钩子跨作用域调用
+
+  // 云端有变化后，把「通知红点 + 当前页面」一起刷新
+  function refreshAfterWorldChange() {
+    if (notifyRefreshHook) notifyRefreshHook();
+    const host = document.getElementById("mainContent");
+    const sess = getSession();
+    if (!host || !host.isConnected || !sess) return;
+    if (currentMenuId === "dashboard") renderDashboardPage(host, sess.displayName);
+    else if (currentMenuId === "mission") renderMissionPage(host, viewRole === "admin");
+    else if (currentMenuId === "bag") renderBagPage(host);
+    else if (currentMenuId === "approval" && viewRole === "admin") renderApprovalPage(host);
+    else if (currentMenuId === "member" && viewRole === "admin") renderMemberPage(host);
+    else if (currentMenuId === "council") renderCouncilPage(host, viewRole === "admin");
+    else if (currentMenuId === "codex") renderCodexPage(host);
+  }
+
+  async function onWorldCloudChange() {
+    // 正在编辑弹窗时不打断输入，保存后自然刷新
+    if (document.querySelector(".modal-overlay")) return;
+    if (worldSyncBusy) return;
+    worldSyncBusy = true;
+    try {
+      const changed = await syncWorldFromCloud();
+      if (changed) refreshAfterWorldChange();
+    } finally {
+      worldSyncBusy = false;
+    }
+  }
+
+  function onWorldVisibility() {
+    // 手机切后台 / 电脑休眠回来时，实时连接可能已经静默断开，立刻补一次
+    if (!document.hidden) onWorldCloudChange();
+  }
+
   function startWorldCloudWatch() {
-    if (worldCloudChannel || !window.SDJCloud || !window.SDJCloud.enabled()) return;
-    window.SDJCloud.watch("world_state", async () => {
-      // 正在编辑弹窗时不打断输入，保存后自然刷新
-      if (document.querySelector(".modal-overlay")) return;
-      await syncWorldFromCloud();
-      const host = document.getElementById("mainContent");
-      const sess = getSession();
-      if (!host || !host.isConnected || !sess) return;
-      if (currentMenuId === "dashboard") renderDashboardPage(host, sess.displayName);
-      else if (currentMenuId === "mission") renderMissionPage(host, viewRole === "admin");
-      else if (currentMenuId === "bag") renderBagPage(host);
-      else if (currentMenuId === "approval" && viewRole === "admin") renderApprovalPage(host);
-      else if (currentMenuId === "member" && viewRole === "admin") renderMemberPage(host);
-      else if (currentMenuId === "council") renderCouncilPage(host, viewRole === "admin");
-      else if (currentMenuId === "codex") renderCodexPage(host);
-    }).then(ch => { worldCloudChannel = ch; });
+    if (!window.SDJCloud || !window.SDJCloud.enabled()) return;
+    if (!worldCloudChannel) {
+      window.SDJCloud.watch("world_state", onWorldCloudChange).then(ch => { worldCloudChannel = ch; });
+    }
+    // 兜底轮询：即使 WebSocket 被网络或长时间挂机掐断，也不会漏掉审批与委托变化
+    if (!worldPollTimer) {
+      worldPollTimer = setInterval(() => { if (!document.hidden) onWorldCloudChange(); }, 12000);
+    }
+    document.removeEventListener("visibilitychange", onWorldVisibility);
+    document.addEventListener("visibilitychange", onWorldVisibility);
   }
   function stopWorldCloudWatch() {
     if (worldCloudChannel && window.SDJCloud) window.SDJCloud.unsubscribe(worldCloudChannel);
     worldCloudChannel = null;
+    if (worldPollTimer) { clearInterval(worldPollTimer); worldPollTimer = null; }
+    document.removeEventListener("visibilitychange", onWorldVisibility);
   }
 
   function mergeLiked(rows, prev) {
@@ -2816,10 +2861,14 @@
   }
 
   // 玩家动作/RPC 之后，立刻把云端最新状态合并回本地
-  async function syncWorldFromCloud() {
+  // force = true 时忽略版本戳强制合并（刚做完 RPC 必须立刻看到结果）
+  async function syncWorldFromCloud(force) {
     if (!(window.SDJCloud && window.SDJCloud.enabled())) return false;
     const world = await window.SDJCloud.loadWorld();
     if (!world) return false;
+    const stamp = String(world.updated_at || "");
+    if (!force && stamp && stamp === worldStamp) return false;
+    worldStamp = stamp;
     appState = applyCloudWorld(world, appState || defaultState());
     try { localStorage.setItem(STATE_KEY, JSON.stringify(appState)); } catch (e) { /* ignore */ }
     return true;
@@ -2830,29 +2879,10 @@
     // 全服数据只有管理者能写（Supabase RLS 同样会拦截非管理员）
     const s = getSession();
     if (window.SDJCloud && window.SDJCloud.enabled() && s && s.role === "admin") {
+      // 在排队时就冻结快照：否则等待的 800ms 内若收到远端推送覆盖了 appState，这次本地改动会被悄悄冲掉
+      const patch = worldPatchSnapshot();
       clearTimeout(cloudSaveTimer);
       cloudSaveTimer = setTimeout(() => {
-        const patch = {
-          missions: appState.missions,
-          items: appState.items,
-          members: appState.members,
-          council: appState.council,
-          codex: appState.codex,
-          bag: appState.bag,
-          cards: appState.cards,
-          activity_log: appState.activityLog,
-          system_alerts: appState.systemAlerts,
-          mission_reports: appState.missionReports,
-          registration_requests: appState.registrationRequests,
-          wallets: appState.wallets,
-          notifications: appState.notifications,
-          friends: appState.friends,
-          settings: appState.settings
-        };
-        // 论坛与审批已拆成独立表，不再塞进 world_state
-        if (!(window.SDJCloud && window.SDJCloud.enabled())) {
-          patch.forum = appState.forum;
-        }
         window.SDJCloud.saveWorld(patch).catch(err => console.warn("[云端] 世界数据保存失败：", err));
       }, 800);
     }
@@ -3756,7 +3786,7 @@
           const r = await window.SDJCloud.acceptMission(m.id);
           btn.disabled = false;
           if (!r.ok) { toast(r.error || "接取失败"); return; }
-          await syncWorldFromCloud();
+          await syncWorldFromCloud(true);
           const host = document.getElementById("mainContent");
           missionTab = "active";
           if (host) renderMissionPage(host, false);
@@ -3796,7 +3826,7 @@
           const r = await window.SDJCloud.submitMission(m.id);
           btn.disabled = false;
           if (!r.ok) { toast(r.error || "提交失败"); return; }
-          await syncWorldFromCloud();
+          await syncWorldFromCloud(true);
           toast("完成申请已提交，等待管理者审批");
           renderMissionPage(container, isAdmin);
           return;
@@ -4790,7 +4820,10 @@
     if (!window.SDJCloud || !window.SDJCloud.enabled() || socialCloudChannel) return;
     window.SDJCloud.watch("social_state", async () => {
       const changed = await pullSocialCloud();
-      if (changed && currentMenuId === "friend") socialRerender(false);
+      if (!changed) return;
+      // 好友页直接重绘；其他页面至少弹出未读消息横幅，避免“必须进好友页才看到消息”
+      if (currentMenuId === "friend") socialRerender(false);
+      else maybeShowUnreadBanner();
     }).then(ch => { socialCloudChannel = ch; });
   }
 
@@ -5424,7 +5457,6 @@
       pullSocialCloud().then(changed => {
         if (changed && currentMenuId === "friend") socialRerender(false);
       });
-      startSocialCloudWatch();
     }
     const s = loadSocial();
     if (!s.presence[me] || Date.now() - s.presence[me] > 30000) touchPresence(me);
@@ -6065,7 +6097,6 @@
     if (socialSearchTimer) { clearTimeout(socialSearchTimer); socialSearchTimer = null; }
     if (socialCloudTimer) { clearTimeout(socialCloudTimer); socialCloudTimer = null; }
     socialCloudPulled = false;
-    stopSocialCloudWatch();
     document.removeEventListener("sdj:social-change", onSocialExternal);
     const host = document.getElementById("mainContent");
     if (host) { host.onclick = null; host.oninput = null; host.onkeydown = null; }
@@ -6955,43 +6986,51 @@
 
     // —— 注册审批：同意 ——
     container.querySelectorAll("[data-pass-reg]").forEach(btn => {
-      btn.onclick = () => {
+      btn.onclick = async () => {
         const r = (appState.registrationRequests || []).find(x => x.id === btn.dataset.passReg);
         if (!r) return;
+        btn.disabled = true;
         r.status = "approved";
         r.reviewedAt = Date.now();
         r.note = "";
         pushNotification(r.username, "你的注册申请已通过管理者审批。");
         pushSystemActivity(`管理者通过了 ${r.displayName} 的${registerRoleLabel(r.role)}注册申请`, "approval");
-        saveState();
+        // 关键动作必须等云端确认结果，不能只依赖 800ms 防抖
+        const ok = await pushWorldNow();
         renderApprovalPage(container);
-        toast(`已同意 ${r.displayName} 的${registerRoleLabel(r.role)}注册申请`);
+        toast(ok
+          ? `已同意 ${r.displayName} 的${registerRoleLabel(r.role)}注册申请`
+          : "已同意，但云端写入失败：请检查网络后重试");
       };
     });
 
     // —— 注册审批：拒绝 ——
     container.querySelectorAll("[data-reject-reg]").forEach(btn => {
-      btn.onclick = () => {
+      btn.onclick = async () => {
         const r = (appState.registrationRequests || []).find(x => x.id === btn.dataset.rejectReg);
         if (!r) return;
         const noteEl = container.querySelector(`[data-reg-note="${r.id}"]`);
         const note = noteEl ? noteEl.value.trim() : "";
+        btn.disabled = true;
         r.status = "rejected";
         r.reviewedAt = Date.now();
         r.note = note || "未填写原因";
         pushNotification(r.username, `你的注册申请被驳回：${r.note}`);
         pushSystemActivity(`管理者驳回了 ${r.displayName} 的注册申请：${r.note}`, "approval");
-        saveState();
+        const ok = await pushWorldNow();
         renderApprovalPage(container);
-        toast(`已拒绝 ${r.displayName} 的注册申请`);
+        toast(ok
+          ? `已拒绝 ${r.displayName} 的注册申请`
+          : "已拒绝，但云端写入失败：请检查网络后重试");
       };
     });
 
     // —— 委托审批：确认完成 ——
     container.querySelectorAll("[data-pass-report]").forEach(btn => {
-      btn.onclick = () => {
+      btn.onclick = async () => {
         const r = (appState.missionReports || []).find(x => x.id === btn.dataset.passReport);
         if (!r) return;
+        btn.disabled = true;
         const m = appState.missions.find(x => x.id === r.missionId);
         r.status = "approved";
         r.reviewedAt = Date.now();
@@ -7003,15 +7042,17 @@
           `委托「${r.missionTitle}」已完成结算，奖励：${granted || r.reward || "已发放"}`);
         pushActivity(r.applicant && r.applicant.username, `委托「${r.missionTitle}」审批通过，奖励：${granted || r.reward || "已发放"}`, "mission");
         pushSystemActivity(`管理者确认完成委托「${r.missionTitle}」`, "approval");
-        saveState();
+        const ok = await pushWorldNow();
         renderApprovalPage(container);
-        toast(`已确认完成：${r.missionTitle} · 奖励已发放`);
+        toast(ok
+          ? `已确认完成：${r.missionTitle} · 奖励已发放`
+          : "已确认，但云端写入失败：请检查网络后重试");
       };
     });
 
     // —— 委托审批：驳回 ——
     container.querySelectorAll("[data-reject-report]").forEach(btn => {
-      btn.onclick = () => {
+      btn.onclick = async () => {
         const r = (appState.missionReports || []).find(x => x.id === btn.dataset.rejectReport);
         if (!r) return;
         const noteEl = container.querySelector(`[data-report-note="${r.id}"]`);
@@ -7026,9 +7067,11 @@
           `委托「${r.missionTitle}」的完成申请被驳回：${r.note}`);
         pushActivity(r.applicant && r.applicant.username, `委托「${r.missionTitle}」完成申请被驳回：${r.note}`, "mission");
         pushSystemActivity(`管理者驳回委托「${r.missionTitle}」：${r.note}`, "approval");
-        saveState();
+        const ok = await pushWorldNow();
         renderApprovalPage(container);
-        toast(`已驳回：${r.missionTitle}`);
+        toast(ok
+          ? `已驳回：${r.missionTitle}`
+          : "已驳回，但云端写入失败：请检查网络后重试");
       };
     });
 
@@ -7074,7 +7117,7 @@
         if (btn) { btn.textContent = r.error || "接取失败"; btn.disabled = false; }
         return;
       }
-      await syncWorldFromCloud();
+      await syncWorldFromCloud(true);
       toast(`已接取委托：${mission.title}（${r.count || 0}/${r.slots || mission.slots || 1}${r.status === "active" ? " · 已满员" : " · 仍可接取"}）`);
       if (btn) { btn.textContent = `已接取 · ${mission.title}`; btn.disabled = true; }
       return;

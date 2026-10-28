@@ -121,7 +121,9 @@
   async function saveWorld(patch) {
     if (!enabled()) return;
     const c = await ensureClient();
-    await c.from("world_state").upsert(Object.assign({ id: 1, updated_at: new Date().toISOString() }, patch));
+    const { error } = await c.from("world_state").upsert(Object.assign({ id: 1, updated_at: new Date().toISOString() }, patch));
+    // 以前这里忽略 error，导致列缺失/权限被拒时“看起来保存成功”，实际全服没有任何变化
+    if (error) throw error;
   }
 
   async function loadMap() {
@@ -280,24 +282,64 @@
     } catch (e) { console.warn("[云端] 更新审批失败：", e); return false; }
   }
 
-  // 订阅某张表的变更，返回 Promise<channel>
+  // 订阅某张表的变更，返回 Promise<handle>
+  // 断线/心跳超时/JWT 过期时自动退避重连，避免长时间挂着页面后彻底收不到推送
   function watch(table, onChange) {
     if (!enabled()) return Promise.resolve(null);
-    let timer = null;
+    let closed = false;
+    let attempt = 0;
+    let channel = null;
+    let retryTimer = null;
+    let debounce = null;
+
+    const handle = {
+      async close() {
+        closed = true;
+        clearTimeout(retryTimer);
+        clearTimeout(debounce);
+        const old = channel;
+        channel = null;
+        if (old && client) { try { await client.removeChannel(old); } catch (e) {} }
+      }
+    };
+
+    const fire = () => {
+      clearTimeout(debounce);
+      debounce = setTimeout(onChange, 300);
+    };
+
     return ensureClient().then(c => {
-      const channel = c.channel(`sdj-${table}-${Date.now()}`)
-        .on("postgres_changes", { event: "*", schema: "public", table }, () => {
-          clearTimeout(timer);
-          timer = setTimeout(onChange, 300);
-        })
-        .subscribe();
-      return channel;
+      const connect = () => {
+        if (closed) return;
+        attempt += 1;
+        channel = c.channel(`sdj-${table}-${Date.now()}-${attempt}`)
+          .on("postgres_changes", { event: "*", schema: "public", table }, fire)
+          .subscribe((status) => {
+            if (closed) return;
+            if (status === "SUBSCRIBED") { attempt = 0; return; }
+            if (status !== "CHANNEL_ERROR" && status !== "TIMED_OUT" && status !== "CLOSED") return;
+            clearTimeout(retryTimer);
+            const delay = Math.min(30000, 1000 * Math.pow(2, Math.max(1, attempt)));
+            retryTimer = setTimeout(() => {
+              if (closed) return;
+              const old = channel;
+              channel = null;
+              if (old) { try { c.removeChannel(old); } catch (e) {} }
+              connect();
+            }, delay);
+          });
+      };
+      connect();
+      return handle;
     }).catch(() => null);
   }
 
   async function unsubscribe(channel) {
-    if (!channel || !client) return;
-    try { await client.removeChannel(channel); } catch (e) {}
+    try {
+      if (!channel) return;
+      if (typeof channel.close === "function") { await channel.close(); return; }
+      if (client) await client.removeChannel(channel);
+    } catch (e) {}
   }
 
   // ---------------- 玩家动作 RPC（跨设备写入 world_state） ----------------
