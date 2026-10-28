@@ -1179,6 +1179,8 @@
     renderContent();
     startWorldCloudWatch();
     startSocialCloudWatch();
+    // 广播横板独立刷新：不依赖页面重绘，切换菜单/实时推送后都能稳定出现
+    const broadcastTick = setInterval(() => { if (!document.hidden) renderBroadcastBanner(); }, 5000);
 
     // 会话守护：长时间挂机后 JWT 可能过期，此时界面看起来还在线，写入却全部失败
     const sessionGuard = setInterval(async () => {
@@ -1195,6 +1197,7 @@
       clearInterval(clockInterval); 
       clearInterval(sweepInterval);
       clearInterval(sessionGuard);
+      clearInterval(broadcastTick);
       stopDashboardClock();
       stopRealtime();
       stopWorldCloudWatch();
@@ -1262,23 +1265,28 @@
 
   // 页面顶部横板：新广播覆盖显示，历史可点开查看每条发送时间
   function renderBroadcastBanner() {
-    const host = document.getElementById("mainContent");
-    if (!host || !host.isConnected) return;
-    const old = host.querySelector(".broadcast-strip");
-    if (old) old.remove();
-    const list = activeBroadcasts();
-    if (!list.length) return;
-    const top = list[0];
-    const strip = el("div", { class: "broadcast-strip" });
-    strip.innerHTML = `
-      <span class="bs-label">全服广播</span>
-      <span class="bs-viewport"><span class="bs-track">${escHTML(top.text)}</span></span>
-      <span class="bs-time">${fmtTime(top.at)}${top.expiresAt ? " · 剩余 " + remainText(top.expiresAt) : ""}</span>
-      <button class="link-btn bs-history" id="bsHistory">历史 ${list.length}</button>`;
-    host.insertBefore(strip, host.firstChild);
-    const btn = strip.querySelector("#bsHistory");
-    if (btn) btn.onclick = () => openBroadcastHistory(list);
+    try {
+      const host = document.getElementById("mainContent");
+      if (!host || !host.isConnected) return;
+      const old = host.querySelector(".broadcast-strip");
+      if (old) old.remove();
+      const list = activeBroadcasts();
+      if (!list.length) return;
+      const top = list[0];
+      const strip = el("div", { class: "broadcast-strip" });
+      strip.innerHTML = `
+        <span class="bs-label">全服广播</span>
+        <span class="bs-viewport"><span class="bs-track">${escHTML(top.text)}</span></span>
+        <span class="bs-time">${fmtTime(top.at)}${top.expiresAt ? " · 剩余 " + remainText(top.expiresAt) : ""}</span>
+        <button class="link-btn bs-history" id="bsHistory">历史 ${list.length}</button>`;
+      host.insertBefore(strip, host.firstChild);
+      const btn = strip.querySelector("#bsHistory");
+      if (btn) btn.onclick = () => openBroadcastHistory(list);
+    } catch (err) {
+      console.warn("[广播] 横板渲染失败：", err);
+    }
   }
+  window.__sdjBroadcastBanner = renderBroadcastBanner;
 
   function dashboardBroadcastText() {
     const list = activeBroadcasts();
