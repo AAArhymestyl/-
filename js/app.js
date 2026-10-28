@@ -3014,10 +3014,16 @@
 
   // 成员页刷新节流：正在输入广播/表单时绝不重绘，否则几秒一次的实时同步会打断输入
   let memberViewFingerprint = "";
+  let memberCloudFp = "";
+  let memberCloudAt = 0;
+  let memberCloudBusy = false;
   function memberPageFingerprint() {
     const accs = (getAccounts() || []).map(a => [a.username, a.role, a.displayName].join("|")).join(",");
     const mem = (loadState().members || []).map(m => [m.username, m.role, m.status].join("|")).join(",");
     return accs + "#" + mem;
+  }
+  function profilesFingerprint(profiles) {
+    return (profiles || []).map(p => [p.username, p.role, p.display_name, p.banned ? 1 : 0].join("|")).join(",");
   }
   function memberPageIsEditing() {
     if (document.querySelector(".modal-overlay")) return true;
@@ -3026,10 +3032,32 @@
     if (!host || !active || !host.contains(active)) return false;
     return /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName);
   }
-  function maybeRefreshMemberPage(host) {
+  async function maybeRefreshMemberPage(host) {
     if (!host || !host.isConnected) return;
     if (currentMenuId !== "member" || viewRole !== "admin") return;
     if (memberPageIsEditing()) return;
+
+    // 云端档案变化（新成员登录/封禁）需要低频比对；只在真正变化时重绘，避免每 12 秒闪一次
+    if (window.SDJCloud && window.SDJCloud.enabled() && Date.now() - memberCloudAt > 12000 && !memberCloudBusy) {
+      memberCloudBusy = true;
+      try {
+        const profiles = await window.SDJCloud.listProfiles();
+        memberCloudAt = Date.now();
+        if (profiles) {
+          const pfp = profilesFingerprint(profiles);
+          if (pfp !== memberCloudFp) {
+            memberCloudFp = pfp;
+            renderMemberPage(host);
+            return;
+          }
+        }
+      } catch (e) {
+        memberCloudAt = Date.now();
+      } finally {
+        memberCloudBusy = false;
+      }
+    }
+
     const fp = memberPageFingerprint();
     if (fp === memberViewFingerprint) return;
     memberViewFingerprint = fp;
@@ -7357,6 +7385,8 @@
     if (window.SDJCloud && window.SDJCloud.enabled()) {
       isOwner = !!(window.SDJCloud.isOwner && window.SDJCloud.isOwner());
       const profiles = await window.SDJCloud.listProfiles();
+      memberCloudFp = profilesFingerprint(profiles);
+      memberCloudAt = Date.now();
       if (profiles && profiles.length) {
         rows = profiles.map(p => {
           const local = (s.members || []).find(m => m.username === p.username) || {};
