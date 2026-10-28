@@ -352,6 +352,12 @@
         if (!res.ok) {
           banner.hidden = false; banner.className = "banner"; banner.textContent = res.error; return;
         }
+        if (res.profile.banned) {
+          if (window.SDJCloud.signOut) window.SDJCloud.signOut();
+          banner.hidden = false; banner.className = "banner";
+          banner.textContent = "该账号已被移出系统，无法登录。如有疑问请联系管理者。";
+          return;
+        }
         const wantsAdmin = role === "admin";
         if (wantsAdmin !== (res.profile.role === "admin")) {
           banner.hidden = false; banner.className = "banner";
@@ -1180,7 +1186,7 @@
       const ok = await window.SDJCloud.hasSession();
       if (ok) return;
       clearSession();
-      toast("云端登录已过期，请重新登录");
+      toast("登录状态已失效或账号已被移出系统，请重新登录");
       navigate("/login");
     }, 60000);
     
@@ -1486,10 +1492,11 @@
     return items.filter(it => Number(it.level) >= 2);
   }
 
-  // 全服数据的完整快照：任何一处漏字段都会让 upsert 整条失败，集中在这里维护
+  // 管理端可整列覆盖的字段白名单。
+  // missions / mission_reports / registration_requests / wallets / notifications
+  // 都是多人并发写入的字段，只能走服务端函数，这里绝不能带，否则会覆盖别人刚写入的数据。
   function worldPatchSnapshot() {
     return {
-      missions: appState.missions,
       items: appState.items,
       members: appState.members,
       council: appState.council,
@@ -1498,10 +1505,6 @@
       cards: appState.cards,
       activity_log: appState.activityLog,
       system_alerts: appState.systemAlerts,
-      mission_reports: appState.missionReports,
-      registration_requests: appState.registrationRequests,
-      wallets: appState.wallets,
-      notifications: appState.notifications,
       friends: appState.friends,
       settings: appState.settings
     };
@@ -1556,6 +1559,37 @@
       console.warn("[云端] 注册审批写入失败：", err);
       return false;
     }
+  }
+
+  // 提交任务内容：先让玩家写清完成情况，再进入管理者审批队列
+  function openMissionSubmitDialog(m, onSubmit) {
+    const overlay = el("div", { class: "modal-overlay", id: "submitModal" });
+    const panel = el("div", { class: "modal-panel panel-cut" });
+    overlay.appendChild(panel);
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+    requestAnimationFrame(() => overlay.classList.add("show"));
+    panel.innerHTML = `
+      <div class="modal-title">提交任务内容</div>
+      <div class="modal-desc">${escHTML(m.title)} · ${escHTML(m.loc)} · 奖励 ${escHTML(rewardText(m))}</div>
+      <textarea id="submitContent" maxlength="800" style="width:100%;min-height:150px;margin-top:12px;padding:10px 12px;border-radius:10px;background:rgba(0,0,0,.35);color:#eee;border:1px solid rgba(255,255,255,.18);font-family:inherit;line-height:1.6;resize:vertical"
+        placeholder="如已在群内完成委托，请直接输入已完成并提交，管理者会查阅之后在后台进行完成审批"></textarea>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+        <button class="btn-sm ghost" id="submitCancel">取消</button>
+        <button class="btn-sm" id="submitConfirm">提交</button>
+      </div>`;
+    const ta = panel.querySelector("#submitContent");
+    panel.querySelector("#submitCancel").onclick = () => overlay.remove();
+    panel.querySelector("#submitConfirm").onclick = async () => {
+      const content = ta.value.trim();
+      if (!content) { toast("请填写任务情况，可直接输入「已完成」"); ta.focus(); return; }
+      const btn = panel.querySelector("#submitConfirm");
+      btn.disabled = true;
+      let ok = false;
+      try { ok = await onSubmit(content); } finally { btn.disabled = false; }
+      if (ok) overlay.remove();
+    };
+    setTimeout(() => ta.focus(), 80);
   }
 
   function closeActionDialog() {
@@ -1871,24 +1905,27 @@
       const btn = $("#meSend");
       btn.disabled = true;
       try {
-        if (editing) {
-          Object.assign(editing, {
-            title, level, locationId, loc: locName, desc, reward, slots, deadline
-          });
+        const draft = editing
+          ? Object.assign({}, editing, { title, level, locationId, loc: locName, desc, reward, slots, deadline })
+          : {
+              id: "m" + Date.now(),
+              title, level, locationId, loc: locName, desc, reward, slots,
+              acceptors: [], status: "available", deadline, createdAt: Date.now()
+            };
+        if (cloud) {
+          // 走服务端函数：保留玩家已产生的接取人 / 状态，不整列覆盖
+          const r = await window.SDJCloud.saveMission(draft);
+          if (!r.ok) { toast(r.error || "云端保存失败"); btn.disabled = false; return; }
+          await syncWorldFromCloud(true);
         } else {
-          appState.missions.unshift({
-            id: "m" + Date.now(),
-            title, level, locationId, loc: locName, desc, reward, slots,
-            acceptors: [], status: "available", deadline, createdAt: Date.now()
-          });
+          if (editing) Object.assign(editing, draft);
+          else appState.missions.unshift(draft);
+          saveState();
         }
-        saveState();
         pushSystemActivity(`管理者${editing ? "更新" : "发布"}委托「${title}」（${level} 级 · ${locName}）`, "mission");
-        const synced = await pushWorldNow();
+        saveState();
         if (globeEngine && typeof globeEngine.refreshMissions === "function") globeEngine.refreshMissions();
-        toast(synced
-          ? (cloud ? `委托「${title}」已${editing ? "更新" : "发布"}并同步云端` : `委托「${title}」已${editing ? "更新" : "发布"}`)
-          : `委托已保存本地，云端同步失败`);
+        toast(`委托「${title}」已${editing ? "更新" : "发布"}${cloud ? "并同步云端" : ""}`);
         closeActionDialog();
         const host = document.getElementById("mainContent");
         if (currentMenuId === "mission" && host) renderMissionPage(host, viewRole === "admin");
@@ -2611,9 +2648,37 @@
     return !!(s && s.role === "admin");
   }
 
+  // 云端模式下超时结算全部交给服务端函数，避免本地整列覆盖别人的接取/提交
+  let cloudSweepBusy = false;
+  let cloudSweepAt = 0;
+  async function runCloudSweep(force) {
+    if (!(window.SDJCloud && window.SDJCloud.enabled())) return false;
+    if (cloudSweepBusy) return false;
+    const sess = getSession();
+    if (!sess || sess.role !== "admin") return false;
+    if (!force && Date.now() - cloudSweepAt < 30000) return false;
+    cloudSweepBusy = true;
+    cloudSweepAt = Date.now();
+    try {
+      const r = await window.SDJCloud.worldSweep();
+      if (!r.ok) return false;
+      if (Number(r.changed) > 0) {
+        await syncWorldFromCloud(true);
+        refreshAfterWorldChange();
+      }
+      return true;
+    } catch (e) {
+      console.warn("[云端] 超时结算失败：", e);
+      return false;
+    } finally {
+      cloudSweepBusy = false;
+    }
+  }
+
   // 时限判定：只卡“提交时刻”，审批可以晚于截止
   function sweepMissionDeadlines(silent) {
     if (!canRunWorldSweeps()) return false;
+    if (window.SDJCloud && window.SDJCloud.enabled()) { runCloudSweep(); return false; }
     const s = loadState();
     const now = Date.now();
     let changed = false;
@@ -2766,6 +2831,7 @@
 
   function sweepTimeouts(silent) {
     if (!canRunWorldSweeps()) return false;
+    if (window.SDJCloud && window.SDJCloud.enabled()) { runCloudSweep(); return false; }
     const s = loadState();
     const now = Date.now();
     let changed = false;
@@ -3755,7 +3821,7 @@
               : `<button class="btn-sm ghost" data-view="${m.id}">查看</button>`) : ""}
             ${!adminView && m.status === "available" && !accepted && !full && !expired ? `<button class="btn-sm" data-accept="${m.id}">接取</button>` : ""}
             ${!adminView && m.status === "available" && full ? `<span class="muted">名额已满</span>` : ""}
-            ${canSubmit ? `<button class="btn-sm" data-submit="${m.id}">提交完成</button>` : ""}
+            ${canSubmit ? `<span class="muted">正在进行任务</span><button class="btn-sm" data-submit="${m.id}">提交任务内容</button>` : ""}
             ${!adminView && (m.status === "active" || m.status === "review") && !accepted ? `<span class="muted">未参与</span>` : ""}
             ${adminView && rep ? `<button class="btn-sm" data-goto-approval="1">去审批</button>` : ""}
             ${m.status === "done" ? `<span class="done-mark">已完成</span>` : ""}
@@ -3868,51 +3934,53 @@
           renderMissionPage(container, isAdmin); // 渲染时统一结算超时委托
           return;
         }
-        if (window.SDJCloud && window.SDJCloud.enabled()) {
-          btn.disabled = true;
-          const r = await window.SDJCloud.submitMission(m.id);
-          btn.disabled = false;
-          if (!r.ok) { toast(r.error || "提交失败"); return; }
-          await syncWorldFromCloud(true);
-          toast("完成申请已提交，等待管理者审批");
+        openMissionSubmitDialog(m, async (content) => {
+          if (window.SDJCloud && window.SDJCloud.enabled()) {
+            const r = await window.SDJCloud.submitMission(m.id, content);
+            if (!r.ok) { toast(r.error || "提交失败"); return false; }
+            await syncWorldFromCloud(true);
+            toast("任务内容已提交，等待管理者审批");
+            renderMissionPage(container, isAdmin);
+            return true;
+          }
+          const s2 = loadState();
+          s2.missionReports = s2.missionReports || [];
+          const mineRep = s2.missionReports.find(r =>
+            r.missionId === m.id && r.applicant && r.applicant.username === myName &&
+            (r.status === "pending" || r.status === "approved")
+          );
+          if (mineRep) {
+            toast(mineRep.status === "pending" ? "你的完成申请已在审批队列中" : "你的完成申请已通过");
+            return true;
+          }
+          s2.missionReports.unshift({
+            id: "mr" + Date.now(),
+            missionId: m.id,
+            missionTitle: m.title,
+            level: m.level,
+            loc: m.loc,
+            reward: rewardText(m),
+            desc: m.desc,
+            content,
+            applicant: {
+              username: myName,
+              name: session ? session.displayName : "匿名",
+              role: session ? session.role : "player"
+            },
+            submittedAt: Date.now(),
+            deadlineAt: m.deadline ? m.deadline.endsAt : null,
+            status: "pending",
+            note: ""
+          });
+          pushActivity(myName, `提交完成申请「${m.title}」`, "mission");
+          recomputeMissionStatus(m);
+          saveState();
+          notifyAdmins(`新的委托完成申请：${m.title}（${session ? session.displayName : "匿名"}）`);
+          saveState();
+          toast("任务内容已提交，等待管理者审批");
           renderMissionPage(container, isAdmin);
-          return;
-        }
-        const s2 = loadState();
-        s2.missionReports = s2.missionReports || [];
-        const mineRep = s2.missionReports.find(r =>
-          r.missionId === m.id && r.applicant && r.applicant.username === myName &&
-          (r.status === "pending" || r.status === "approved")
-        );
-        if (mineRep) {
-          toast(mineRep.status === "pending" ? "你的完成申请已在审批队列中" : "你的完成申请已通过");
-          return;
-        }
-        s2.missionReports.unshift({
-          id: "mr" + Date.now(),
-          missionId: m.id,
-          missionTitle: m.title,
-          level: m.level,
-          loc: m.loc,
-          reward: rewardText(m),
-          desc: m.desc,
-          applicant: {
-            username: myName,
-            name: session ? session.displayName : "匿名",
-            role: session ? session.role : "player"
-          },
-          submittedAt: Date.now(),
-          deadlineAt: m.deadline ? m.deadline.endsAt : null,
-          status: "pending",
-          note: ""
+          return true;
         });
-        pushActivity(myName, `提交完成申请「${m.title}」`, "mission");
-        recomputeMissionStatus(m);
-        saveState();
-        notifyAdmins(`新的委托完成申请：${m.title}（${session ? session.displayName : "匿名"}）`);
-        saveState();
-        toast("完成申请已提交，等待管理者审批");
-        renderMissionPage(container, isAdmin);
       };
     });
 
@@ -6869,7 +6937,7 @@
   }
 
   /* ---------------- 成员管理（管理者） ---------------- */
-  function renderMemberPage(container) {
+  async function renderMemberPage(container) {
     // 进入时强制读最新状态，并把当前登录者的真实身份补进成员表
     reloadState();
     syncAccountMembers();
@@ -6879,9 +6947,37 @@
     }
     const s = loadState();
     const currentKey = session ? (session.username || session.displayName) : null;
-    const rows = s.members.map(m => Object.assign({}, m, {
+    let rows = s.members.map(m => Object.assign({}, m, {
       current: !!currentKey && (m.username === currentKey || m.name === session.displayName)
     }));
+    let isOwner = false;
+    if (window.SDJCloud && window.SDJCloud.enabled()) {
+      isOwner = !!(window.SDJCloud.isOwner && window.SDJCloud.isOwner());
+      const profiles = await window.SDJCloud.listProfiles();
+      if (profiles && profiles.length) {
+        rows = profiles.map(p => {
+          const local = (s.members || []).find(m => m.username === p.username) || {};
+          return {
+            id: p.id,
+            username: p.username,
+            name: p.display_name,
+            role: roleLabelOf(p.role),
+            roleRaw: p.role,
+            banned: !!p.banned,
+            owner: !!p.owner,
+            status: p.banned ? "已移出" : "正常",
+            lastSeen: local.lastSeen || "—",
+            current: !!currentKey && p.username === currentKey
+          };
+        });
+      }
+    }
+    // 最高管理者不能被处理；其他管理者只有最高管理者能处理
+    const canAct = (row) => {
+      if (row.current || row.owner) return false;
+      if (row.roleRaw === "admin" && !isOwner) return false;
+      return true;
+    };
     pageShell(container, {
       title: "神降系统成员管理", en: "MEMBER MGMT",
       tools: `<span class="count-chip">${rows.length} 名成员</span>`,
@@ -6896,9 +6992,15 @@
             <div class="member-row">
               <span class="member-name"><span class="avatar">${escHTML(String(m.name).slice(0, 1))}</span>${escHTML(m.name)}${m.current ? `<span class="role-chip">当前</span>` : ""}</span>
               <span>${escHTML(m.role)}</span>
-              <span class="${m.status === "受限" ? "state-warn" : "state-ok"}">${escHTML(m.status)}</span>
+              <span class="${(m.status === "受限" || m.status === "已移出") ? "state-warn" : "state-ok"}">${escHTML(m.status)}</span>
               <span class="muted">${escHTML(m.lastSeen)}</span>
-              <span>${m.current ? `<span class="muted">—</span>` : `<button class="link-btn" data-restrict="${m.id}">${m.status === "受限" ? "解除限制" : "限制访问"}</button>`}</span>
+              <span>${m.current
+                ? `<span class="muted">—</span>`
+                : (window.SDJCloud && window.SDJCloud.enabled()
+                    ? (canAct(m)
+                        ? `<button class="link-btn ${m.banned ? "" : "warn"}" data-ban="${escHTML(m.username)}" data-banned="${m.banned ? 1 : 0}">${m.banned ? "恢复访问" : "移出系统"}</button>`
+                        : `<span class="muted">—</span>`)
+                    : `<button class="link-btn" data-restrict="${m.id}">${m.status === "受限" ? "解除限制" : "限制访问"}</button>`)}</span>
             </div>`).join("")}
         </div>`
     });
@@ -6910,6 +7012,25 @@
         pushSystemActivity(`管理者将成员「${m.name}」设为${m.status}`, "member");
         saveState(); renderMemberPage(container);
         toast(`已${m.status === "受限" ? "限制" : "解除限制"}：${m.name}`);
+      };
+    });
+
+    // 云端模式：移出 / 恢复（真正落库，被移出者无法再登录）
+    container.querySelectorAll("[data-ban]").forEach(btn => {
+      btn.onclick = async () => {
+        const username = btn.dataset.ban;
+        const banned = btn.dataset.banned !== "1";
+        const tip = banned
+          ? `确认将「${username}」移出系统？之后该账号无法登录。`
+          : `确认恢复「${username}」的访问权限？`;
+        if (!confirm(tip)) return;
+        btn.disabled = true;
+        const r = await window.SDJCloud.banMember(username, banned, "");
+        btn.disabled = false;
+        if (!r.ok) { toast(r.error || "操作失败"); return; }
+        await syncWorldFromCloud(true);
+        renderMemberPage(container);
+        toast(banned ? `已移出系统：${username}` : `已恢复访问：${username}`);
       };
     });
     container.querySelector("#broadcastSend").onclick = () => {
@@ -6978,6 +7099,7 @@
               <div class="approval-reason">
                 地点：${escHTML(r.loc || "—")} · 奖励：${escHTML(r.reward || "—")} · 接取人数：${acceptors.length}
                 ${r.desc ? `<br>要求：${escHTML(r.desc)}` : ""}
+                ${r.content ? `<br>任务情况：${escHTML(r.content)}` : ""}
               </div>
               <input class="input-line" data-report-note="${r.id}" maxlength="60" placeholder="驳回原因（驳回时填写，会通知提交人）">
             </div>`;
@@ -7078,6 +7200,14 @@
         const r = (appState.missionReports || []).find(x => x.id === btn.dataset.passReport);
         if (!r) return;
         btn.disabled = true;
+        if (window.SDJCloud && window.SDJCloud.enabled()) {
+          const res = await window.SDJCloud.reviewMission(r.id, "approve", "");
+          if (!res.ok) { toast(res.error || "结算失败"); btn.disabled = false; return; }
+          await syncWorldFromCloud(true);
+          renderApprovalPage(container);
+          toast(`已确认完成：${r.missionTitle} · 奖励 ${res.granted || "已发放"}`);
+          return;
+        }
         const m = appState.missions.find(x => x.id === r.missionId);
         r.status = "approved";
         r.reviewedAt = Date.now();
@@ -7104,6 +7234,14 @@
         if (!r) return;
         const noteEl = container.querySelector(`[data-report-note="${r.id}"]`);
         const note = noteEl ? noteEl.value.trim() : "";
+        if (window.SDJCloud && window.SDJCloud.enabled()) {
+          const res = await window.SDJCloud.reviewMission(r.id, "reject", note);
+          if (!res.ok) { toast(res.error || "驳回失败"); return; }
+          await syncWorldFromCloud(true);
+          renderApprovalPage(container);
+          toast(`已驳回：${r.missionTitle}`);
+          return;
+        }
         const m = appState.missions.find(x => x.id === r.missionId);
         r.status = "rejected";
         r.reviewedAt = Date.now();
@@ -7233,6 +7371,14 @@
       }
       if (!res || !res.profile) return;
       const p = res.profile;
+      if (p.banned) {
+        clearSession();
+        if (getPath() !== "/login") {
+          toast("该账号已被移出系统，无法继续使用");
+          setTimeout(() => navigate("/login"), 900);
+        }
+        return;
+      }
       setSession({ role: p.role, displayName: p.display_name, username: p.username, ts: Date.now(), auto: true });
       if (res.world) {
         appState = applyCloudWorld(res.world, defaultState());

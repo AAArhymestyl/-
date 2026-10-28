@@ -175,7 +175,11 @@
         if (/fetch|network|timeout|abort/i.test(msg)) return true;  // 网络问题不算掉线
         return false;
       }
-      return !!(u && u.user);
+      if (!u || !u.user) return false;
+      // 被移出系统的账号：即使令牌还在也立刻失权
+      const p = await fetchProfile(u.user.id);
+      if (p) profile = p;
+      return !(p && p.banned);
     } catch (e) {
       const msg = String(e.message || e);
       return /fetch|network|timeout|abort/i.test(msg);
@@ -283,6 +287,19 @@
     } catch (e) { console.warn("[云端] 社交快照保存失败：", e); return false; }
   }
 
+  // 成员列表（含封禁 / 最高管理者标记），成员管理页使用
+  async function listProfiles() {
+    if (!enabled()) return null;
+    try {
+      const c = await ensureClient();
+      const { data, error } = await c.from("profiles")
+        .select("id,username,display_name,role,banned,owner,created_at")
+        .order("created_at", { ascending: true });
+      if (error) return null;
+      return data || [];
+    } catch (e) { return null; }
+  }
+
   async function listApprovals() {
     if (!enabled()) return null;
     try {
@@ -377,7 +394,16 @@
   }
 
   const acceptMission = (missionId) => rpc("mission_accept", { p_mission_id: missionId });
-  const submitMission = (missionId) => rpc("mission_submit", { p_mission_id: missionId });
+  const submitMission = (missionId, content) =>
+    rpc("mission_submit", { p_mission_id: missionId, p_content: content || "" });
+  const reviewMission = (reportId, action, note) =>
+    rpc("mission_review", { p_report_id: reportId, p_action: action, p_note: note || "" });
+  const saveMission = (mission) => rpc("mission_save", { p_mission: mission });
+  const deleteMission = (missionId) => rpc("mission_delete", { p_id: missionId });
+  const worldSweep = () => rpc("world_sweep", {});
+  const banMember = (username, banned, note) =>
+    rpc("member_ban", { p_username: username, p_banned: !!banned, p_note: note || "" });
+  const isOwner = () => !!(profile && profile.owner);
   const submitRegistration = (username, displayName, role) =>
     rpc("registration_submit", { p_username: username, p_display_name: displayName, p_role: role });
   const registrationStatus = (username) =>
@@ -421,12 +447,19 @@
     addForumPost,
     setForumLikes,
     removeForumPost,
+    listProfiles,
     listApprovals,
     setApprovalStatus,
     loadSocialSnapshot,
     saveSocialSnapshot,
     acceptMission,
     submitMission,
+    reviewMission,
+    saveMission,
+    deleteMission,
+    worldSweep,
+    banMember,
+    isOwner,
     submitRegistration,
     registrationStatus,
     adminRequest,
