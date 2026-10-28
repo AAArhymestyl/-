@@ -1115,6 +1115,7 @@
         <a class="menu-item ${item.id === currentMenuId ? 'active' : ''}" data-id="${item.id}" data-cn="${item.cn}" data-en="${item.en}">
           <div class="menu-icon">${icons[item.id] || icons.dashboard}</div>
           <div class="menu-text"><span class="menu-cn">${item.cn}</span><span class="menu-en">${item.en}</span></div>
+          ${item.id === "friend" ? `<span class="menu-social-badge" id="socialMenuBadge" hidden></span>` : ""}
         </a>
       `).join('');
 
@@ -1131,6 +1132,7 @@
 
       const activeItem = config.find(m => m.id === currentMenuId);
       if (activeItem) document.getElementById("topbarTitle").innerHTML = `${activeItem.cn} / <span>${activeItem.en}</span>`;
+      refreshSocialBadges();
     }
 
     function renderContent() {
@@ -5349,6 +5351,9 @@
   let socialCloudChannel = null;
   let socialCloudBusy = false;
   let socialCloudPulled = false;
+  let socialProfilesCache = [];
+  let socialProfilesAt = 0;
+  let socialProfilesBusy = false;
   const SOCIAL_CLOUD_AT = "sdj_social_cloud_at";
 
   function defaultSocial() {
@@ -5525,11 +5530,18 @@
   function startSocialCloudWatch() {
     if (!window.SDJCloud || !window.SDJCloud.enabled() || socialCloudChannel) return;
     window.SDJCloud.watch("social_state", async () => {
+      const before = socialUiFingerprint();
       const changed = await pullSocialCloud();
       if (!changed) return;
-      // 好友页直接重绘；其他页面至少弹出未读消息横幅，避免“必须进好友页才看到消息”
-      if (currentMenuId === "friend") socialRerender(false);
-      else maybeShowUnreadBanner();
+      const after = socialUiFingerprint();
+      refreshSocialBadges();
+      if (before === after) return; // 只有 presence/已读变化时不重绘，避免页面周期性弹跳
+      // 好友页重绘；其他页面至少弹出未读提示
+      if (currentMenuId === "friend") {
+        if (socialView.view === "chat") { onSocialExternal(); return; }
+        if (socialInputBusy()) { maybeShowUnreadBanner(); return; }
+        socialRerender();
+      } else maybeShowUnreadBanner();
     }).then(ch => { socialCloudChannel = ch; });
   }
 
@@ -5542,6 +5554,10 @@
 
   /* ---------------- 用户目录与在线状态 ---------------- */
   function realAccounts() {
+    // 云端模式使用服务端 profiles，才能搜到其他设备注册的玩家/契约者/管理员
+    if (window.SDJCloud && window.SDJCloud.enabled() && socialProfilesCache.length) {
+      return socialProfilesCache.slice();
+    }
     const accs = getAccounts();
     if (accs.length) return accs.map(a => ({
       username: a.username,
@@ -5551,6 +5567,35 @@
       sign: ""
     }));
     return ROSTER.map(k => ({ username: k.username, name: k.name, role: k.role, npc: false, sign: "" }));
+  }
+
+  async function ensureSocialProfiles(force) {
+    if (!window.SDJCloud || !window.SDJCloud.enabled()) return;
+    if (socialProfilesBusy) return;
+    if (!force && socialProfilesCache.length && Date.now() - socialProfilesAt < 30000) return;
+    socialProfilesBusy = true;
+    try {
+      const list = await window.SDJCloud.listProfiles();
+      socialProfilesAt = Date.now();
+      if (!list) return;
+      const before = socialProfilesCache.map(p => p.username).sort().join(",");
+      socialProfilesCache = list.filter(p => !p.banned).map(p => ({
+        username: p.username,
+        name: p.display_name || p.username,
+        role: p.role || "player",
+        npc: false,
+        sign: ""
+      }));
+      const after = socialProfilesCache.map(p => p.username).sort().join(",");
+      if (before !== after) {
+        refreshSocialBadges();
+        if (currentMenuId === "friend" && !socialInputBusy()) socialRerender();
+      }
+    } catch (e) {
+      /* 网络失败时回退本地账号目录 */
+    } finally {
+      socialProfilesBusy = false;
+    }
   }
 
   function socialDirectory() {
@@ -6296,10 +6341,11 @@
     // 进入社交模块时强制重读，避免其他标签页的变更停留在旧缓存
     reloadSocialMsgs();
     reloadSocial();
+    ensureSocialProfiles();
     if (!socialCloudPulled && window.SDJCloud && window.SDJCloud.enabled()) {
       socialCloudPulled = true;
       syncNpcFriendsToCloud().then(() => pullSocialCloud()).then(changed => {
-        if (changed && currentMenuId === "friend") socialRerender(false);
+        if (changed && currentMenuId === "friend" && !socialInputBusy()) socialRerender();
       });
     }
     const s = loadSocial();
@@ -6354,6 +6400,7 @@
 
   function buildMessagesView(me) {
     const v = socialView;
+    const pending = socialPendingCount(me);
     const tools = `
       <div class="social-tools">
         <div class="social-search">
@@ -6368,7 +6415,7 @@
             <button class="social-plus-item" data-sact="file-stub">传文件</button>
           </div>
         </div>
-        <button class="btn-sm ghost" data-sact="go-contacts">通讯录</button>
+        <button class="btn-sm ghost social-contacts-btn" data-sact="go-contacts">通讯录${pending ? `<i class="social-dot"></i>` : ""}</button>
       </div>`;
 
     if (v.query.trim()) {
@@ -6652,7 +6699,7 @@
       <span class="avatar">${escHTML(socialInitial(nameOf(r.from)))}</span>
       <div class="notice-body">
         <div class="notice-title">${escHTML(nameOf(r.from))}<span class="notice-time">${escHTML(socTime(r.createdAt))}</span></div>
-        ${r.message ? `<div class="notice-msg">附言：${escHTML(r.message)}</div>` : ""}
+        <div class="notice-msg">${r.message ? "附言：" + escHTML(r.message) : "想与你共谈密语"}</div>
         <div class="notice-status ${r.status}">${isPending ? "待处理" : socialStatusText(r)}</div>
       </div>
       ${isPending ? `<div class="notice-ops">
@@ -6754,10 +6801,12 @@
         results = list.length ? list.map(u => {
           const friend = areFriends(me, u.username);
           const pend = pendingFriendBetween(me, u.username);
+          const online = isOnline(u.username);
+          const state = friend ? "已是好友" : pend ? "已发送 · 等待同意" : (online ? "在线 · 查看资料" : "离线 · 查看资料");
           return `<button class="person-row" data-sact="open-user" data-user="${escHTML(u.username)}">
             <span class="avatar">${escHTML(socialInitial(u.name))}</span>
             <span class="person-main"><span class="person-name">${escHTML(u.name)}${u.npc ? '<i class="npc-chip">NPC</i>' : ""}</span><span class="person-sub">${roleLabelOf(u.role)} · ${escHTML(u.sign || "暂无签名")}</span></span>
-            <span class="person-state">${friend ? "已是好友" : pend ? "已发送" : "查看资料"}</span>
+            <span class="person-state ${online ? "is-online" : ""}">${state}</span>
           </button>`;
         }).join("") : buildEmpty("未找到该用户", "昵称需完全或部分匹配，注意大小写");
       } else {
@@ -6954,8 +7003,13 @@
       touchPresence(me);
       saveSocial();
       const changed = sweepSocial();
-      if (changed) { socialRerender(false); return; }
+      if (changed) {
+        if (socialInputBusy()) updateLiveCounts();
+        else socialRerender(true);
+        return;
+      }
       updateLiveCounts();
+      refreshSocialBadges();
     }, 15000);
   }
 
@@ -6970,12 +7024,21 @@
     document.querySelectorAll("[data-offline]").forEach(n => { n.textContent = "不在线人数：" + live.offline; });
   }
 
-  function socialRerender(preserveInput) {
+  // 输入框正在编辑时不要整页重绘，否则搜索输入会被打断
+  function socialInputBusy() {
+    const host = document.getElementById("mainContent");
+    const active = document.activeElement;
+    if (!host || !active || !host.contains(active)) return false;
+    return /^(INPUT|TEXTAREA)$/.test(active.tagName);
+  }
+
+  function socialRerender() {
     const host = document.getElementById("mainContent");
     if (!host) return;
     const active = document.activeElement;
-    const activeId = preserveInput && active && active.id ? active.id : "";
-    const caret = active && active.selectionStart != null ? active.selectionStart : null;
+    const activeId = active && active.id ? active.id : "";
+    const start = active && active.selectionStart != null ? active.selectionStart : null;
+    const end = active && active.selectionEnd != null ? active.selectionEnd : null;
     const draftEl = document.getElementById("socialMsgInput");
     if (draftEl) socialView.draft = draftEl.value;
     renderFriendPage(host, viewRole === "admin");
@@ -6984,10 +7047,42 @@
       if (node) {
         try {
           node.focus();
-          if (caret != null && node.setSelectionRange) node.setSelectionRange(caret, caret);
+          if (start != null && node.setSelectionRange) node.setSelectionRange(start, end != null ? end : start);
         } catch (e) { /* ignore */ }
       }
     }
+    refreshSocialBadges();
+  }
+
+  // 只包含会影响界面结构/红点的数据，presence 变化不参与，避免 15 秒一次的无意义重绘
+  function socialPendingCount(me) {
+    if (!me) return 0;
+    const s = loadSocial();
+    const friendReq = (s.friendRequests || []).filter(r => r.to === me && r.status === "pending").length;
+    const groupReq = pendingGroupNotices(me).length;
+    const unreadMsg = socialConversations(me, "friend").reduce((n, c) => n + (c.unread ? 1 : 0), 0);
+    return friendReq + groupReq + unreadMsg;
+  }
+
+  function refreshSocialBadges() {
+    const badge = document.getElementById("socialMenuBadge");
+    if (!badge) return;
+    const n = socialPendingCount(currentSocialUser());
+    badge.hidden = n <= 0;
+    badge.textContent = n > 99 ? "99+" : String(n);
+  }
+
+  function socialUiFingerprint() {
+    const me = currentSocialUser();
+    if (!me) return "";
+    const s = loadSocial();
+    const friends = friendsOf(me).slice().sort().join(",");
+    const fReq = (s.friendRequests || []).filter(r => r.to === me && r.status === "pending").length;
+    const gReq = pendingGroupNotices(me).length;
+    const unread = socialConversations(me, "friend").reduce((n, c) => n + (c.unread ? 1 : 0), 0);
+    const groups = (s.groups || []).filter(g => (g.members || []).includes(me))
+      .map(g => g.id + ":" + g.name + ":" + g.members.length + ":" + g.status).join(",");
+    return [friends, fReq, gReq, unread, groups].join("|");
   }
 
   function onSocialExternal() {
@@ -7007,7 +7102,8 @@
       // 聊天视图内保持连续，不整页重绘（避免闪烁）
       return;
     }
-    if (currentMenuId === "friend") socialRerender(false);
+    refreshSocialBadges();
+    if (currentMenuId === "friend" && !socialInputBusy()) socialRerender();
   }
 
   /* 未读好友消息横幅：不在好友模块时，收到消息后显示 10 秒 */
@@ -7015,7 +7111,9 @@
   function maybeShowUnreadBanner() {
     const me = currentSocialUser();
     if (!me) return;
-    const count = socialConversations(me, "friend").filter(c => c.unread > 0).length;
+    const unreadConvs = socialConversations(me, "friend").filter(c => c.unread > 0).length;
+    const pending = pendingFriendNotices(me).length + pendingGroupNotices(me).length;
+    const count = unreadConvs + pending;
     if (count > 0) showUnreadBanner(count);
   }
 
@@ -7027,8 +7125,8 @@
     const node = document.createElement("div");
     node.className = "social-unread-banner";
     node.id = "socialUnreadBanner";
-    node.innerHTML = '<span class="ub-mark">!</span><span>【您有好友消息未查看】</span>' +
-      (count > 1 ? "<em>" + count + " 个会话</em>" : "");
+    node.innerHTML = '<span class="ub-mark">!</span><span>【您有新的密语未查看】</span>' +
+      (count > 1 ? "<em>" + count + " 项待处理</em>" : "");
     node.onclick = () => {
       node.remove();
       if (unreadBannerTimer) { clearTimeout(unreadBannerTimer); unreadBannerTimer = null; }
@@ -7490,11 +7588,15 @@
           emitSocial();
         };
       } else {
-        box.innerHTML = '<button class="btn-sm" data-x="add">添加好友</button><button class="btn-sm ghost" data-x="close">关闭</button>';
+        box.innerHTML = '<button class="btn-sm" data-x="add">发送好友请求</button><button class="btn-sm ghost" data-x="close">关闭</button>';
         box.querySelector('[data-x="add"]').onclick = async () => {
+          const btn = box.querySelector('[data-x="add"]');
+          btn.disabled = true;
           const r = await sendFriendRequest(me, username);
-          if (!r.ok) { toast(r.error); return; }
-          overlay.remove();
+          if (!r.ok) { btn.disabled = false; toast(r.error); return; }
+          box.innerHTML = '<div class="request-waiting">已发送请求，正在等待对方同意…</div>' +
+            '<button class="btn-sm ghost" data-x="close-wait">关闭</button>';
+          box.querySelector('[data-x="close-wait"]').onclick = () => overlay.remove();
           toast("已发送请求，等待对方同意");
           emitSocial();
         };
