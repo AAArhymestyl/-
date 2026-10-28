@@ -507,6 +507,39 @@
     }
   }
 
+  async function phaseSearch() {
+    heading("阶段六 · 好友搜索输入稳定性");
+    const win = await bootApp("player");
+    const doc = win.document;
+    doc.querySelector('.menu-item[data-id="friend"]').click();
+    await sleep(500);
+    doc.getElementById("socialPlus").click();
+    doc.querySelector('[data-sact="go-search"]').click();
+    await sleep(400);
+    let input = doc.querySelector("#socialQueryInput");
+    report("S1 搜索界面输入框可用", !!input, !!input);
+    if (!input) return;
+    input.focus();
+    input.value = "沙";
+    input.dispatchEvent(new win.Event("input", { bubbles: true }));
+    await sleep(450);
+    let cur = doc.querySelector("#socialQueryInput");
+    report("S2 输入一个字后不弹回默认界面",
+      !!cur && cur.value === "沙" && win.SDJSocial.view().query === "沙" && win.SDJSocial.view().view === "search",
+      (cur ? cur.value : "missing") + "/" + win.SDJSocial.view().view);
+    report("S3 搜索结果实时出现沙利叶",
+      Array.from(doc.querySelectorAll(".person-row")).some(row => row.textContent.indexOf("沙利叶") >= 0),
+      doc.querySelectorAll(".person-row").length);
+
+    cur.focus();
+    win.SDJSocial.refresh();
+    await sleep(250);
+    const again = doc.querySelector("#socialQueryInput");
+    report("S4 外部刷新后保留搜索词与输入焦点",
+      !!again && again.value === "沙" && doc.activeElement === again,
+      (again ? again.value : "missing") + "/" + (doc.activeElement ? doc.activeElement.id : "none"));
+  }
+
   async function main() {
     snapshot();
     try {
@@ -517,6 +550,7 @@
       await phase3();
       await phase4();
       await phaseForum();
+      await phaseSearch();
     } catch (err) {
       report("测试执行异常", false, err && err.message ? err.message : String(err));
     } finally {
