@@ -4204,9 +4204,11 @@
               地点：${escHTML(m.loc)} · 奖励：${escHTML(rewardText(m))} · 名额：${acceptors.length} / ${m.slots || 1}
               · 时限：${escHTML(deadlineLabel(m.deadline))}
             </div>
-            <div class="mission-countdown ${expired ? "expired" : ""}" data-cd="${m.deadline && m.deadline.endsAt ? m.deadline.endsAt : ""}">
+            ${(m.status === "done" || m.status === "failed")
+              ? `<div class="mission-countdown done">已结束</div>`
+              : `<div class="mission-countdown ${expired ? "expired" : ""}" data-cd="${m.deadline && m.deadline.endsAt ? m.deadline.endsAt : ""}">
               剩余：${cdText}
-            </div>
+            </div>`}
             ${(adminView && acceptors.length) || m.status === "done" ? `
               <div class="acceptors">
                 接取人：${acceptors.length ? acceptors.map(a => `<span class="acceptor">${escHTML(a.name)}（${roleLabelOf(a.role)}）</span>`).join("") : "<span class='muted'>暂无</span>"}
