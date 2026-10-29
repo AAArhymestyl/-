@@ -335,9 +335,9 @@
       const regLink = page.querySelector("#reg-link");
       if (regLink) regLink.textContent = role === "player" ? "玩家/契约者" : "管理者";
       const nameLabel = page.querySelectorAll(".field-label")[0];
-      if (nameLabel) nameLabel.textContent = role === "player" ? "姓名" : "管理员 ID";
+      if (nameLabel) nameLabel.textContent = role === "player" ? "姓名" : "管理者 ID";
       const inputs = page.querySelectorAll(".field-input");
-      if (inputs[0]) inputs[0].placeholder = role === "player" ? "请输入姓名" : "请输入管理员 ID";
+      if (inputs[0]) inputs[0].placeholder = role === "player" ? "请输入姓名" : "请输入管理者 ID";
     }
 
     segBtns.forEach(btn => btn.addEventListener("click", () => { role = btn.dataset.role; refreshRoleUI(); }));
@@ -965,9 +965,9 @@
             ),
             session.role === "admin" 
               ? el("div", { class: "role-switch-wrap visible", id: "roleSwitchWrap" },
-                  el("div", { class: "role-switch-btn", id: "roleSwitchBtn" }, "当前权限: 管理员 ▾"),
+                  el("div", { class: "role-switch-btn", id: "roleSwitchBtn" }, "当前权限: 管理者 ▾"),
                   el("div", { class: "role-dropdown", id: "roleDropdown" },
-                    el("div", { class: "role-dropdown-item active", "data-role": "admin" }, "管理员"),
+                    el("div", { class: "role-dropdown-item active", "data-role": "admin" }, "管理者"),
                     el("div", { class: "role-dropdown-item", "data-role": "player" }, "玩家"),
                     el("div", { class: "role-dropdown-item", "data-role": "contractor" }, "契约者")
                   )
@@ -1014,7 +1014,7 @@
         item.onclick = () => {
           viewRole = item.dataset.role;
           dropdown.querySelectorAll(".role-dropdown-item").forEach(i => i.classList.toggle("active", i.dataset.role === viewRole));
-          const label = viewRole === 'admin' ? '管理员' : (viewRole === 'player' ? '玩家' : '契约者');
+          const label = viewRole === 'admin' ? '管理者' : (viewRole === 'player' ? '玩家' : '契约者');
           roleBtn.textContent = `当前权限: ${label} ▾`;
           
           const targetMenuConfig = viewRole === "admin" ? menuConfig.admin : menuConfig.player;
@@ -1517,8 +1517,8 @@
     const adminCards = `
       <div class="data-card data-card-link panel-cut" data-goto="member">
         <div class="card-header"><span>全组织活跃成员</span><div class="card-icon">${icons.member}</div></div>
-        <div class="card-value">${playerCount + contractorCount}</div>
-        <div class="card-desc">${accounts.length ? `玩家 ${playerCount} / 契约者 ${contractorCount}` : "暂无已注册玩家或契约者"}</div>
+        <div class="card-value" data-member-total>${playerCount + contractorCount}</div>
+        <div class="card-desc" data-member-desc>${accounts.length ? `玩家 ${playerCount} / 契约者 ${contractorCount}` : "暂无已注册玩家或契约者"}</div>
       </div>
       <div class="data-card data-card-link panel-cut" data-goto="approval">
         <div class="card-header"><span>待审批请求</span><div class="card-icon">${icons.mission}</div></div>
@@ -1535,12 +1535,14 @@
       <button class="action-btn" data-action="0">发布全服广播<span>01 →</span></button>
       <button class="action-btn" data-action="1">发布委托任务<span>02 →</span></button>
       <button class="action-btn" data-action="2">成员权限管理<span>03 →</span></button>
-      <button class="action-btn" data-action="3">系统核心维护<span>04 →</span></button>`
+      <button class="action-btn" data-action="3">系统核心维护<span>04 →</span></button>
+      <button class="action-btn" data-profile>个人资料档案<span>05 →</span></button>`
       : `
       <button class="action-btn" data-goto="map">进入地图<span>01 →</span></button>
       <button class="action-btn" data-goto="mission">查看在线委托<span>02 →</span></button>
       <button class="action-btn" data-activity>查看最近动态<span>03 →</span></button>
-      <button class="action-btn" data-goto="forum">前往论坛<span>04 →</span></button>`;
+      <button class="action-btn" data-goto="forum">前往论坛<span>04 →</span></button>
+      <button class="action-btn" data-profile>个人资料档案<span>05 →</span></button>`;
 
     container.innerHTML = `
       ${broadcast ? `<div class="broadcast-marquee">
@@ -1589,6 +1591,171 @@
         btn.onclick = () => openAdminActionDialog(Number(btn.dataset.action));
       });
     }
+    container.querySelectorAll("[data-profile]").forEach(btn => {
+      btn.onclick = () => openProfileArchive();
+    });
+    if (isAdmin) refreshDashboardMembers(container);
+  }
+
+  // 主控台「全组织活跃成员」：云端模式读服务端 profiles，本机模式回退本地账号表
+  async function refreshDashboardMembers(container) {
+    if (!container || !container.isConnected) return;
+    if (!window.SDJCloud || !window.SDJCloud.enabled()) return;
+    const list = await window.SDJCloud.listProfiles();
+    if (!list || !container.isConnected) return;
+    const live = list.filter(p => !p.banned && p.role !== "admin");
+    const players = live.filter(p => p.role === "player").length;
+    const contractors = live.filter(p => p.role === "contractor").length;
+    const totalEl = container.querySelector("[data-member-total]");
+    const descEl = container.querySelector("[data-member-desc]");
+    if (totalEl) totalEl.textContent = String(players + contractors);
+    if (descEl) descEl.textContent = live.length ? `玩家 ${players} / 契约者 ${contractors}` : "暂无已注册玩家或契约者";
+  }
+
+  /* ---------------- 个人资料档案（全体成员共享，可自行编辑） ---------------- */
+  function localProfileFallback() {
+    const sess = getSession() || {};
+    const username = sess.username || sess.displayName || "";
+    const acc = getAccounts().find(a => a.username === username) || {};
+    const cached = socialProfilesCache.find(p => p.username === username) || {};
+    return {
+      username,
+      display_name: cached.name || acc.displayName || sess.displayName || username,
+      gender: cached.gender || acc.gender || "",
+      age: cached.age === undefined || cached.age === "" ? (acc.age == null ? "" : acc.age) : cached.age,
+      avatar_url: cached.avatar || acc.avatar || "",
+      sign: cached.sign || acc.sign || "",
+      role: sess.role || acc.role || "player",
+      created_at: cached.createdAt || acc.createdAt || ""
+    };
+  }
+
+  async function openProfileArchive() {
+    const cloud = !!(window.SDJCloud && window.SDJCloud.enabled());
+    let p = localProfileFallback();
+    if (cloud) {
+      const r = await window.SDJCloud.myProfile();
+      if (r.ok && r.profile) {
+        p = Object.assign({}, p, {
+          display_name: r.profile.display_name,
+          gender: r.profile.gender || "",
+          age: r.profile.age == null ? "" : r.profile.age,
+          avatar_url: r.profile.avatar_url || "",
+          sign: r.profile.sign || "",
+          role: r.profile.role,
+          created_at: r.profile.created_at
+        });
+      }
+    }
+    const days = p.created_at ? Math.max(0, Math.floor((Date.now() - new Date(p.created_at).getTime()) / 86400000)) : 0;
+    let avatar = p.avatar_url || "";
+    const genderOptions = ["", "男", "女", "其他"].map(g =>
+      `<option value="${g}" ${p.gender === g ? "selected" : ""}>${g || "未填写"}</option>`).join("");
+    const overlay = openSocialModal(`<div class="modal-title">个人资料档案</div>
+      <div class="profile-head">
+        <span class="avatar big has-photo profile-avatar" id="paAvatar" ${avatar ? `style="background-image:url('${escHTML(avatar)}')"` : ""}>${avatar ? "" : escHTML(socialInitial(p.display_name))}</span>
+        <div class="profile-meta">
+          <div class="profile-name">${escHTML(p.display_name)}</div>
+          <div class="profile-sub">${roleLabelOf(p.role)} · 已进入系统 ${days} 天</div>
+        </div>
+      </div>
+      <div class="profile-table">
+        <div class="profile-row"><span>注册时间</span><em>${p.created_at ? escHTML(fmtTime(new Date(p.created_at).getTime())) : "未知"}</em></div>
+        <div class="profile-row"><span>在线状态</span><em>在线</em></div>
+      </div>
+      <div class="profile-edit">
+        <label class="modal-label">姓名<input class="input-line" id="paName" maxlength="20" value="${escHTML(p.display_name)}"></label>
+        <div class="form-row-2">
+          <label class="modal-label">性别<select class="input-line" id="paGender">${genderOptions}</select></label>
+          <label class="modal-label">年龄<input class="input-line" id="paAge" type="number" min="0" max="150" value="${p.age === "" ? "" : escHTML(String(p.age))}"></label>
+        </div>
+        <label class="modal-label">头像（支持 png / jpg / webp，≤2MB）
+          <input class="input-line" id="paFile" type="file" accept="image/png,image/jpeg,image/webp">
+        </label>
+        <label class="modal-label">签名<textarea class="input-line" id="paSign" maxlength="120" placeholder="留一句话给同路人">${escHTML(p.sign || "")}</textarea></label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-sm" id="paSave">保存资料</button>
+        <button class="btn-sm ghost" data-close>关闭</button>
+      </div>`, (box) => {
+      box.querySelector("[data-close]").onclick = () => box.remove();
+      const fileInput = box.querySelector("#paFile");
+      const avatarEl = box.querySelector("#paAvatar");
+      fileInput.onchange = async () => {
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) return;
+        if (!/^image\//.test(file.type || "")) { toast("只能上传图片文件"); return; }
+        if (file.size > 2 * 1024 * 1024) { toast("头像不能超过 2MB"); return; }
+        if (!cloud) {
+          const url = await new Promise((resolve) => {
+            const fr = new FileReader();
+            fr.onload = () => resolve(String(fr.result || ""));
+            fr.onerror = () => resolve("");
+            fr.readAsDataURL(file);
+          });
+          if (url) { avatar = url; avatarEl.style.backgroundImage = `url('${url}')`; avatarEl.textContent = ""; }
+          return;
+        }
+        toast("正在上传头像…");
+        const r = await window.SDJCloud.uploadAvatar(file);
+        if (!r.ok) { toast(r.error || "头像上传失败"); return; }
+        avatar = r.url;
+        avatarEl.style.backgroundImage = `url('${avatar}')`;
+        avatarEl.textContent = "";
+        toast("头像已上传，点击保存资料生效");
+      };
+      box.querySelector("#paSave").onclick = async () => {
+        const btn = box.querySelector("#paSave");
+        const fields = {
+          display_name: box.querySelector("#paName").value.trim(),
+          gender: box.querySelector("#paGender").value,
+          age: box.querySelector("#paAge").value.trim(),
+          avatar_url: avatar,
+          sign: box.querySelector("#paSign").value.trim()
+        };
+        if (!fields.display_name) { toast("姓名不能为空"); return; }
+        if (fields.age !== "" && (Number(fields.age) < 0 || Number(fields.age) > 150)) {
+          toast("年龄请填写 0 - 150 之间的数字"); return;
+        }
+        btn.disabled = true;
+        if (cloud) {
+          const r = await window.SDJCloud.saveMyProfile(fields);
+          btn.disabled = false;
+          if (!r.ok) { toast(r.error || "保存失败"); return; }
+          const sess = getSession() || {};
+          sess.displayName = fields.display_name;
+          setSession(sess);
+          const cached = socialProfilesCache.find(x => x.username === (sess.username || fields.display_name));
+          if (cached) {
+            cached.name = fields.display_name;
+            cached.gender = fields.gender;
+            cached.age = fields.age === "" ? "" : Number(fields.age);
+            cached.avatar = fields.avatar_url;
+            cached.sign = fields.sign;
+          }
+        } else {
+          const accs = getAccounts();
+          const sess = getSession() || {};
+          const username = sess.username || sess.displayName;
+          const acc = accs.find(a => a.username === username);
+          if (acc) {
+            acc.displayName = fields.display_name;
+            acc.gender = fields.gender;
+            acc.age = fields.age;
+            acc.avatar = fields.avatar_url;
+            acc.sign = fields.sign;
+            saveAccounts(accs);
+          }
+          sess.displayName = fields.display_name;
+          setSession(sess);
+        }
+        box.remove();
+        toast("个人资料已保存，全体成员可见");
+        emitSocial();
+        const host = document.getElementById("mainContent");
+        if (host && currentMenuId === "dashboard") renderDashboardPage(host, fields.display_name);
+      };
+    });
   }
 
   // 回归测试 / 外部调用接口
@@ -2348,15 +2515,22 @@
     if (!drawer || !body || !manageBtn) return;
 
     let editingId = null;
+    let formOverlay = null;
 
-    const closeForm = () => { editingId = null; body.querySelector(".point-form")?.remove(); };
+    const closeForm = () => {
+      editingId = null;
+      if (formOverlay) { formOverlay.remove(); formOverlay = null; }
+    };
 
+    // 编辑/新增一律弹出居中浮窗，避免长列表里点击下方的 L 还要滚回顶部
     const openForm = (data) => {
+      closeForm();
       const isNew = !data.id;
       editingId = data.id || null;
-      const form = document.createElement("div");
-      form.className = "point-form";
-      form.innerHTML = `
+      formOverlay = document.createElement("div");
+      formOverlay.className = "modal-overlay point-overlay";
+      formOverlay.innerHTML = `
+        <div class="modal-panel panel-cut point-modal">
         <div class="form-title">${isNew ? "新增地点" : "编辑地点"}</div>
         <label>名称<input class="input-line" data-f="name" maxlength="24" value="${escHTML(data.name || "")}"></label>
         <div class="form-row-2">
@@ -2376,8 +2550,11 @@
           <button class="btn-sm" data-act="save">保存</button>
           <button class="btn-sm ghost" data-act="cancel">取消</button>
         </div>
-      `;
-      body.prepend(form);
+        </div>`;
+      document.body.appendChild(formOverlay);
+      requestAnimationFrame(() => formOverlay.classList.add("show"));
+      formOverlay.addEventListener("click", (e) => { if (e.target === formOverlay) closeForm(); });
+      const form = formOverlay.querySelector(".point-modal");
       form.querySelector('[data-act="cancel"]').onclick = closeForm;
       form.querySelector('[data-act="save"]').onclick = () => {
         const get = k => form.querySelector(`[data-f="${k}"]`).value.trim();
@@ -2395,7 +2572,7 @@
           district: get("district") || "A区",
           level: Number(form.querySelector('[data-f="level"]').value),
           lat, lon,
-          desc: get("desc") || "管理员创建的地点。"
+          desc: get("desc") || "管理者创建的地点。"
         };
         if (!globeEngine) { toast("地图尚未就绪"); return; }
         globeEngine.upsertLocation(payload);
@@ -3414,11 +3591,30 @@
       seen.add(username);
       out.push({ username, name: name || username, role });
     };
+    // 云端模式以服务端 profiles 为准，才能给其他设备注册的玩家分配持有数量
+    if (window.SDJCloud && window.SDJCloud.enabled() && socialProfilesCache.length) {
+      socialProfilesCache.forEach(p => push(p.username, p.name, p.role));
+      return out;
+    }
     try { (getAccounts() || []).forEach(a => push(a.username, a.displayName || a.username, a.role)); } catch (e) { /* ignore */ }
-    ROSTER.forEach(k => push(k.username, k.name, k.role));
     const sess = getSession();
-    if (sess) push(sess.username || sess.displayName, sess.displayName, sess.role);
+    if (sess && !out.length) push(sess.username || sess.displayName, sess.displayName, sess.role);
     return out;
+  }
+
+  // 卡牌配置属于全服数据：保存后必须立刻写云端，刷新/其他设备才能看到
+  async function persistCardsNow() {
+    saveState();
+    const cloud = !!(window.SDJCloud && window.SDJCloud.enabled());
+    const sess = getSession();
+    if (!cloud || !sess || sess.role !== "admin") return true;
+    const ok = await pushWorldNow();
+    if (!ok) {
+      toast("卡牌保存失败：云端写入未成功，请检查网络后重试");
+      return false;
+    }
+    await syncWorldFromCloud(true);
+    return true;
   }
   function cardRarityChip(r) {
     const key = CARD_RARITIES.includes(r) ? r : "none";
@@ -3718,14 +3914,15 @@
         <button class="btn-sm ghost" data-close>取消</button>
       </div>`;
     panel.querySelector("[data-close]").onclick = () => overlay.remove();
-    panel.querySelector("#rnSave").onclick = () => {
+    panel.querySelector("#rnSave").onclick = async () => {
       const name = panel.querySelector("#rnName").value.trim();
       if (!name) { toast("名称不能为空"); return; }
       const cs = loadState().cards;
       if (name === node.name) delete cs.renames[node.id];
       else cs.renames[node.id] = name;
       pushSystemActivity(`管理者将卡池「${node.name}」重命名为「${name}」`, "card");
-      saveState();
+      const ok = await persistCardsNow();
+      if (!ok) return;
       overlay.remove();
       renderBagPage(container);
       toast(`已重命名为「${name}」`);
@@ -3773,7 +3970,7 @@
       </div>`;
     panel.querySelector("[data-close]").onclick = () => overlay.remove();
 
-    panel.querySelector("#ceSave").onclick = () => {
+    panel.querySelector("#ceSave").onclick = async () => {
       const name = panel.querySelector("#ceName").value.trim();
       if (!name) { toast("卡牌名称不能为空"); return; }
       const rarity = panel.querySelector("#ceRarity").value;
@@ -3795,7 +3992,11 @@
         cardSetHeld(input.dataset.hold, pool.id, draft.id, input.value);
       });
       pushSystemActivity(`管理者${isNew ? "新增" : "更新"}卡牌「${name}」（${cardNodeName(pool)}）`, "card");
-      saveState();
+      const saveBtn = panel.querySelector("#ceSave");
+      saveBtn.disabled = true;
+      const ok = await persistCardsNow();
+      saveBtn.disabled = false;
+      if (!ok) return;
       overlay.remove();
       renderBagPage(container);
       toast(isNew ? `已新增卡牌「${name}」` : `已保存卡牌「${name}」`);
@@ -3823,7 +4024,7 @@
         <button class="btn-sm ghost" data-close>取消</button>
       </div>`;
     panel.querySelector("[data-close]").onclick = () => overlay.remove();
-    panel.querySelector("#cdConfirm").onclick = () => {
+    panel.querySelector("#cdConfirm").onclick = async () => {
       const cs = loadState().cards;
       const key = cardKey(pool.id, card.id);
       const idx = (cs.added[pool.id] || []).findIndex(c => c.id === card.id);
@@ -3832,7 +4033,8 @@
       delete cs.overrides[key];
       Object.keys(cs.holdings || {}).forEach(u => { if (cs.holdings[u]) delete cs.holdings[u][key]; });
       pushSystemActivity(`管理者删除卡牌「${card.name}」（${cardNodeName(pool)}）`, "card");
-      saveState();
+      const ok = await persistCardsNow();
+      if (!ok) return;
       overlay.remove();
       renderBagPage(container);
       toast(`已删除「${card.name}」`);
@@ -4020,7 +4222,8 @@
             ${!adminView && m.status === "available" && !accepted && !full && !expired ? `<button class="btn-sm" data-accept="${m.id}">接取</button>` : ""}
             ${!adminView && m.status === "available" && full ? `<span class="muted">名额已满</span>` : ""}
             ${canSubmit ? `<span class="muted">正在进行任务</span><button class="btn-sm" data-submit="${m.id}">提交任务内容</button>` : ""}
-            ${!adminView && (m.status === "active" || m.status === "review") && !accepted ? `<span class="muted">未参与</span>` : ""}
+            ${!adminView && (m.status === "active" || m.status === "review") && !accepted
+              ? `<span class="muted">${full ? "此委托接取人数已满" : "未参与"}</span>` : ""}
             ${adminView && rep ? `<button class="btn-sm" data-goto-approval="1">去审批</button>` : ""}
             ${m.status === "done" ? `<span class="done-mark">已完成</span>` : ""}
             ${adminView && m.status === "done" ? `<button class="btn-sm ghost" data-view="${m.id}">查看</button>` : ""}
@@ -5343,7 +5546,8 @@
   let socialView = {
     view: "messages", tab: "friend", conv: null, searchTab: "person",
     contactsTab: "friends", groupTab: "all", groupId: null,
-    query: "", pickMode: "create", picked: [], draft: ""
+    query: "", applied: "", msgQuery: "", msgApplied: "",
+    pickMode: "create", picked: [], draft: ""
   };
   let socialTick = null;
   let socialSearchTimer = null;
@@ -5578,15 +5782,21 @@
       const list = await window.SDJCloud.listProfiles();
       socialProfilesAt = Date.now();
       if (!list) return;
-      const before = socialProfilesCache.map(p => p.username).sort().join(",");
+      const sig = p => [p.username, p.name, p.sign, p.avatar, p.gender, p.age].join(":");
+      const before = socialProfilesCache.map(sig).sort().join(",");
       socialProfilesCache = list.filter(p => !p.banned).map(p => ({
         username: p.username,
         name: p.display_name || p.username,
         role: p.role || "player",
         npc: false,
-        sign: ""
+        sign: p.sign || "",
+        gender: p.gender || "",
+        age: p.age == null ? "" : p.age,
+        avatar: p.avatar_url || "",
+        createdAt: p.created_at || "",
+        updatedAt: p.updated_at || ""
       }));
-      const after = socialProfilesCache.map(p => p.username).sort().join(",");
+      const after = socialProfilesCache.map(sig).sort().join(",");
       if (before !== after) {
         refreshSocialBadges();
         if (currentMenuId === "friend" && !socialInputBusy()) socialRerender();
@@ -6405,7 +6615,8 @@
       <div class="social-tools">
         <div class="social-search">
           <span class="social-search-icon">⌕</span>
-          <input id="socialSearch" class="social-input-search" placeholder="搜索好友、群聊或消息" value="${escHTML(v.query)}">
+          <input id="socialSearch" class="social-input-search" placeholder="搜索好友、群聊或消息" value="${escHTML(v.msgQuery || "")}">
+          <button class="btn-sm search-go" data-sact="run-msg-search">查找</button>
         </div>
         <div class="social-plus-wrap">
           <button class="social-plus" data-sact="plus-toggle" id="socialPlus" title="更多">＋</button>
@@ -6418,8 +6629,8 @@
         <button class="btn-sm ghost social-contacts-btn" data-sact="go-contacts">通讯录${pending ? `<i class="social-dot"></i>` : ""}</button>
       </div>`;
 
-    if (v.query.trim()) {
-      return { title: "密语", en: "MESSAGES", tools, body: buildSocialSearchResult(me, v.query.trim()) };
+    if ((v.msgApplied || "").trim()) {
+      return { title: "密语", en: "MESSAGES", tools, body: buildSocialSearchResult(me, v.msgApplied.trim()) };
     }
 
     const items = socialConversations(me, v.tab);
@@ -6792,23 +7003,41 @@
 
   function buildSearchView(me) {
     const v = socialView;
-    const q = v.query.trim();
+    const q = (v.applied || "").trim();
     const isPerson = v.searchTab === "person";
     let results = "";
     if (q) {
       if (isPerson) {
-        const list = socialDirectory().filter(u => u.username !== me && (u.name.toLowerCase().includes(q.toLowerCase()) || u.username.toLowerCase().includes(q.toLowerCase()))).slice(0, 20);
+        const kw = q.toLowerCase();
+        const list = socialDirectory().filter(u => u.username !== me &&
+          (u.name.toLowerCase().includes(kw) || u.username.toLowerCase().includes(kw))).slice(0, 20);
         results = list.length ? list.map(u => {
           const friend = areFriends(me, u.username);
           const pend = pendingFriendBetween(me, u.username);
+          const incoming = !friend && !pend && loadSocial().friendRequests
+            .some(r => r.from === u.username && r.to === me && r.status === "pending");
           const online = isOnline(u.username);
-          const state = friend ? "已是好友" : pend ? "已发送 · 等待同意" : (online ? "在线 · 查看资料" : "离线 · 查看资料");
-          return `<button class="person-row" data-sact="open-user" data-user="${escHTML(u.username)}">
-            <span class="avatar">${escHTML(socialInitial(u.name))}</span>
-            <span class="person-main"><span class="person-name">${escHTML(u.name)}${u.npc ? '<i class="npc-chip">NPC</i>' : ""}</span><span class="person-sub">${roleLabelOf(u.role)} · ${escHTML(u.sign || "暂无签名")}</span></span>
-            <span class="person-state ${online ? "is-online" : ""}">${state}</span>
-          </button>`;
-        }).join("") : buildEmpty("未找到该用户", "昵称需完全或部分匹配，注意大小写");
+          return `<div class="person-row search-person">
+            <span class="avatar${u.avatar ? " has-photo" : ""}" ${u.avatar ? `style="background-image:url('${escHTML(u.avatar)}')"` : ""}>${u.avatar ? "" : escHTML(socialInitial(u.name))}</span>
+            <span class="person-main">
+              <span class="person-name">${escHTML(u.name)}${u.npc ? '<i class="npc-chip">NPC</i>' : ""}</span>
+              <span class="person-sub">${roleLabelOf(u.role)} · ${escHTML(u.sign || "暂无签名")}</span>
+              <span class="person-sub person-state-line">
+                <i class="state-dot ${online ? "on" : "off"}"></i>${online ? "在线" : "离线"} ·
+                <button class="link-btn" data-sact="open-user" data-user="${escHTML(u.username)}">查看资料</button>
+              </span>
+            </span>
+            <span class="person-ops">
+              ${friend
+                ? '<button class="btn-sm ghost" data-sact="conv" data-kind="friend" data-id="' + escHTML(u.username) + '">发消息</button>'
+                : pend
+                  ? '<button class="btn-sm" disabled>已申请</button>'
+                  : incoming
+                    ? `<button class="btn-sm" data-sact="open-user" data-user="${escHTML(u.username)}">处理申请</button>`
+                    : `<button class="btn-sm" data-sact="add-friend" data-user="${escHTML(u.username)}">申请添加好友</button>`}
+            </span>
+          </div>`;
+        }).join("") : buildEmpty("未找到该用户", "可输入姓名的任意关键字（如「沙」「沙利」）后点击查找");
       } else {
         if (!/^\d{6,12}$/.test(q)) {
           results = buildEmpty("请输入数字群号", "群号为 6–12 位数字；仅允许被搜索的群可被找到");
@@ -6842,7 +7071,8 @@
         }
       }
     } else {
-      results = buildEmpty(isPerson ? "输入昵称找人" : "输入群号找群", isPerson ? "支持模糊匹配用户昵称" : "仅可搜索到开启「允许被搜索」的群聊");
+      results = buildEmpty(isPerson ? "输入昵称找人" : "输入群号找群",
+        isPerson ? "输入姓名中的任意关键字，点击「查找」后显示匹配成员" : "输入完整群号后点击「查找」");
     }
 
     return {
@@ -6850,10 +7080,12 @@
       tools: `<button class="btn-sm ghost" data-sact="back">返回</button>`,
       body: `<div class="search-hero panel-cut">
         <div class="search-hero-title">${isPerson ? "找人" : "找群"}</div>
-        <div class="search-hero-sub">${isPerson ? "输入用户昵称，查看资料并发起好友申请" : "输入数字群号，仅显示允许被搜索的群聊"}</div>
+        <div class="search-hero-sub">${isPerson ? "输入用户昵称，点击查找后可查看资料并申请添加好友" : "输入数字群号，点击查找后显示允许被搜索的群聊"}</div>
         <div class="social-search search-wide">
           <span class="social-search-icon">⌕</span>
-          <input id="socialQueryInput" class="social-input-search" placeholder="${isPerson ? "输入用户昵称" : "输入群号（6–12 位数字）"}" value="${escHTML(v.query)}">
+          <input id="socialQueryInput" class="social-input-search" enterkeyhint="search"
+            placeholder="${isPerson ? "输入用户昵称（可只输入其中一两个字）" : "输入群号（6–12 位数字）"}" value="${escHTML(v.query)}">
+          <button class="btn-sm search-go" data-sact="run-search">查找</button>
         </div>
         <div class="social-tabs search-tabs">
           <button class="social-tab ${isPerson ? "active" : ""}" data-sact="search-tab" data-tab="person">找人</button>
@@ -7147,18 +7379,50 @@
 
   function onSocialInput(e) {
     const t = e.target;
-    if (t.id === "socialSearch" || t.id === "socialQueryInput") {
+    if (t.id === "socialSearch") {
+      // 只记录草稿，绝不在输入过程中重绘：重绘会打断中文输入法组合态
+      socialView.msgQuery = t.value;
+    } else if (t.id === "socialQueryInput") {
       socialView.query = t.value;
-      if (socialSearchTimer) clearTimeout(socialSearchTimer);
-      socialSearchTimer = setTimeout(() => socialRerender(true), 150);
+      if (socialView.view === "picker") filterPickerRows(t.value);
     } else if (t.id === "socialMsgInput") {
       socialView.draft = t.value;
     }
   }
 
+  // 邀请成员列表：本地就地过滤，不重建 DOM
+  function filterPickerRows(text) {
+    const q = String(text || "").trim().toLowerCase();
+    document.querySelectorAll("#mainContent .picker-row").forEach(row => {
+      const name = (row.querySelector(".picker-name")?.textContent || "").toLowerCase();
+      row.style.display = !q || name.includes(q) ? "" : "none";
+    });
+  }
+
+  function runSocialSearch() {
+    socialView.applied = String(socialView.query || "").trim();
+    socialRerender();
+  }
+
+  function runMsgSearch() {
+    socialView.msgApplied = String(socialView.msgQuery || "").trim();
+    socialRerender();
+  }
+
   function onSocialKeydown(e) {
+    if (e.target.id === "socialSearch" && e.key === "Enter") {
+      e.preventDefault();
+      runMsgSearch();
+      return;
+    }
+    if (e.target.id === "socialQueryInput" && e.key === "Enter") {
+      e.preventDefault();
+      runSocialSearch();
+      return;
+    }
     if (e.target.id === "socialSearch" && e.key === "Escape") {
-      socialView.query = "";
+      socialView.msgQuery = "";
+      socialView.msgApplied = "";
       socialRerender();
       return;
     }
@@ -7238,7 +7502,8 @@
       case "go-search":
         closePlusMenu();
         socialView.view = "search"; socialView.searchTab = "person";
-        socialView.query = "";
+        socialView.query = ""; socialView.applied = "";
+        socialView.msgQuery = ""; socialView.msgApplied = "";
         socialRerender();
         return;
       case "file-stub":
@@ -7246,15 +7511,17 @@
         toast("文件传输暂未开放");
         return;
       case "go-contacts":
-        socialView.view = "contacts"; socialView.query = "";
+        socialView.view = "contacts"; socialView.query = ""; socialView.applied = "";
+        socialView.msgQuery = ""; socialView.msgApplied = "";
         socialRerender();
         return;
       case "go-messages":
-        socialView.view = "messages"; socialView.query = "";
+        socialView.view = "messages"; socialView.query = ""; socialView.applied = "";
+        socialView.msgQuery = ""; socialView.msgApplied = "";
         socialRerender();
         return;
       case "msg-tab":
-        socialView.tab = btn.dataset.tab; socialView.query = "";
+        socialView.tab = btn.dataset.tab; socialView.msgQuery = ""; socialView.msgApplied = "";
         socialRerender();
         return;
       case "contact-tab":
@@ -7398,9 +7665,27 @@
       }
       case "search-tab":
         socialView.searchTab = btn.dataset.tab;
-        socialView.query = "";
+        socialView.query = ""; socialView.applied = "";
         socialRerender();
         return;
+      case "run-search":
+        runSocialSearch();
+        return;
+      case "run-msg-search":
+        runMsgSearch();
+        return;
+      case "add-friend": {
+        const target = btn.dataset.user;
+        if (!target) return;
+        if (areFriends(me, target)) { toast("你们已经是好友了"); return; }
+        btn.disabled = true;
+        const r = await sendFriendRequest(me, target);
+        if (!r.ok) { btn.disabled = false; toast(r.error); return; }
+        btn.textContent = "已申请";
+        toast("已发送好友申请，等待对方同意");
+        emitSocial();
+        return;
+      }
       case "add-tag":
         openAddTagDialog();
         return;
@@ -7532,6 +7817,8 @@
     overlay.innerHTML = `<div class="modal-panel wide social-modal">${html}</div>`;
     overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
     document.body.appendChild(overlay);
+    // .modal-overlay 默认 opacity:0，必须加 show 类才会真正显示
+    requestAnimationFrame(() => overlay.classList.add("show"));
     if (setup) setup(overlay);
     return overlay;
   }
@@ -7547,20 +7834,40 @@
     const pend = pendingFriendBetween(me, username);
     const incoming = loadSocial().friendRequests.find(r => r.from === username && r.to === me && r.status === "pending");
     const online = isOnline(username);
-    openSocialModal(`<div class="modal-title">用户资料</div>
+    const avatarHtml = u.avatar
+      ? `<span class="avatar big has-photo" style="background-image:url('${escHTML(u.avatar)}')"></span>`
+      : `<span class="avatar big">${escHTML(socialInitial(u.name))}</span>`;
+    const days = u.createdAt ? Math.max(0, Math.floor((Date.now() - new Date(u.createdAt).getTime()) / 86400000)) : null;
+    const metaRow = (k, v) => v || v === 0 ? `<div class="profile-row"><span>${k}</span><em>${escHTML(String(v))}</em></div>` : "";
+    const btnHtml = friend
+      ? '<button class="btn-sm" data-x="chat">发消息</button><button class="btn-sm danger" data-x="del">删除好友</button>'
+      : pend
+        ? '<button class="btn-sm" disabled>已发送请求，等待对方同意</button>'
+        : incoming
+          ? '<button class="btn-sm" data-x="ok">同意好友申请</button>'
+          : '<button class="btn-sm" data-x="add">申请添加好友</button><button class="btn-sm ghost" data-x="close">关闭</button>';
+    openSocialModal(`<div class="modal-title">个人资料档案</div>
       <div class="profile-head">
-        <span class="avatar big">${escHTML(socialInitial(u.name))}</span>
+        ${avatarHtml}
         <div class="profile-meta">
           <div class="profile-name">${escHTML(u.name)}${u.npc ? '<i class="npc-chip">NPC</i>' : ""}</div>
-          <div class="profile-sub">${roleLabelOf(u.role)} · ${online ? "在线" : "不在线"} · 好友 ${friendsOf(username).length} 人</div>
+          <div class="profile-sub">
+            <i class="state-dot ${online ? "on" : "off"}"></i>${online ? "在线" : "离线"} · ${roleLabelOf(u.role)} · 好友 ${friendsOf(username).length} 人
+          </div>
         </div>
       </div>
+      <div class="profile-table">
+        ${metaRow("姓名", u.name)}
+        ${metaRow("性别", u.gender || "未填写")}
+        ${metaRow("年龄", u.age === "" ? "未填写" : u.age)}
+        ${metaRow("注册时间", u.createdAt ? fmtTime(new Date(u.createdAt).getTime()) : "未知")}
+        ${metaRow("已进入系统", days === null ? "未知" : days + " 天")}
+        ${metaRow("所属身份", roleLabelOf(u.role))}
+      </div>
       <div class="profile-sign">${escHTML(u.sign || "这位同路人还没有留下签名。")}</div>
-      <div class="profile-actions" id="profileActions"></div>`, (overlay) => {
+      <div class="profile-actions" id="profileActions">${btnHtml}</div>`, (overlay) => {
       const box = overlay.querySelector("#profileActions");
       if (friend) {
-        box.innerHTML = '<button class="btn-sm" data-x="chat">发消息</button>' +
-          '<button class="btn-sm danger" data-x="del">删除好友</button>';
         box.querySelector('[data-x="chat"]').onclick = () => {
           overlay.remove();
           socialView.view = "chat";
@@ -7576,10 +7883,7 @@
           toast("已删除好友");
           emitSocial();
         };
-      } else if (pend) {
-        box.innerHTML = '<button class="btn-sm" disabled>已发送请求，等待对方同意</button>';
       } else if (incoming) {
-        box.innerHTML = '<button class="btn-sm" data-x="ok">同意好友申请</button>';
         box.querySelector('[data-x="ok"]').onclick = async () => {
           const r = await respondFriendRequest(incoming.id, true);
           overlay.remove();
@@ -7587,8 +7891,7 @@
           toast("已同意好友申请");
           emitSocial();
         };
-      } else {
-        box.innerHTML = '<button class="btn-sm" data-x="add">发送好友请求</button><button class="btn-sm ghost" data-x="close">关闭</button>';
+      } else if (!pend) {
         box.querySelector('[data-x="add"]').onclick = async () => {
           const btn = box.querySelector('[data-x="add"]');
           btn.disabled = true;
