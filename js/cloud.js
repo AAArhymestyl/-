@@ -364,11 +364,79 @@
     try {
       const c = await ensureClient();
       const { data, error } = await c.from("profiles")
-        .select("id,username,display_name,role,banned,owner,created_at")
+        .select("id,username,display_name,role,banned,owner,created_at,gender,age,avatar_url,sign,updated_at")
         .order("created_at", { ascending: true });
       if (error) return null;
       return data || [];
     } catch (e) { return null; }
+  }
+
+  // 个人资料档案：读取 / 保存 / 上传头像（写回 profiles，全体成员共享最新资料）
+  async function myProfile() {
+    if (!enabled()) return { ok: false, error: "云端未配置" };
+    try {
+      const c = await ensureClient();
+      const { data: sess } = await c.auth.getSession();
+      const uid = sess && sess.session ? sess.session.user.id : null;
+      if (!uid) return { ok: false, error: "请先登录" };
+      const { data, error } = await c.from("profiles")
+        .select("id,username,display_name,role,gender,age,avatar_url,sign,created_at,updated_at")
+        .eq("id", uid).maybeSingle();
+      if (error) throw error;
+      if (!data) return { ok: false, error: "缺少成员档案" };
+      return { ok: true, profile: data };
+    } catch (e) {
+      return { ok: false, error: translate(e.message || String(e)) };
+    }
+  }
+
+  async function saveMyProfile(fields) {
+    if (!enabled()) return { ok: false, error: "云端未配置" };
+    try {
+      const c = await ensureClient();
+      const { data: sess } = await c.auth.getSession();
+      const uid = sess && sess.session ? sess.session.user.id : null;
+      if (!uid) return { ok: false, error: "请先登录" };
+      const patch = {
+        display_name: String(fields.display_name || "").trim(),
+        gender: String(fields.gender || "").trim(),
+        age: fields.age === null || fields.age === undefined || fields.age === "" ? null : Number(fields.age),
+        avatar_url: String(fields.avatar_url || ""),
+        sign: String(fields.sign || ""),
+        updated_at: new Date().toISOString()
+      };
+      if (!patch.display_name) return { ok: false, error: "姓名不能为空" };
+      if (patch.age !== null && (!Number.isFinite(patch.age) || patch.age < 0 || patch.age > 150)) {
+        return { ok: false, error: "年龄请填写 0 - 150 之间的数字" };
+      }
+      const { data, error } = await c.from("profiles").update(patch).eq("id", uid).select("*").maybeSingle();
+      if (error) throw error;
+      return { ok: true, profile: data };
+    } catch (e) {
+      return { ok: false, error: translate(e.message || String(e)) };
+    }
+  }
+
+  // 头像上传到 avatars 桶的 {uid}/ 目录，返回公开 URL
+  async function uploadAvatar(file) {
+    if (!enabled()) return { ok: false, error: "云端未配置" };
+    try {
+      const c = await ensureClient();
+      const { data: sess } = await c.auth.getSession();
+      const uid = sess && sess.session ? sess.session.user.id : null;
+      if (!uid) return { ok: false, error: "请先登录后再上传头像" };
+      const extMatch = String(file.name || "").match(/\.[a-z0-9]+$/i);
+      const ext = extMatch ? extMatch[0].toLowerCase() : ".jpg";
+      const path = `${uid}/avatar-${Date.now()}${ext}`;
+      const { error } = await c.storage.from("avatars").upload(path, file, {
+        cacheControl: "300", upsert: true, contentType: file.type || "image/jpeg"
+      });
+      if (error) throw error;
+      const { data } = c.storage.from("avatars").getPublicUrl(path);
+      return { ok: true, url: data.publicUrl, path };
+    } catch (e) {
+      return { ok: false, error: translate(e.message || String(e)) };
+    }
   }
 
   async function listApprovals() {
@@ -568,6 +636,9 @@
     setForumLikes,
     removeForumPost,
     listProfiles,
+    myProfile,
+    saveMyProfile,
+    uploadAvatar,
     listApprovals,
     setApprovalStatus,
     loadSocialSnapshot,
