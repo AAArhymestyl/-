@@ -15,6 +15,9 @@ window.SDJ_CONFIG = {
   allowAdminRegister: true,
   adminInvite: "",
 
+  // 本机没有任何账号时，注册告警等系统通知的兜底接收人（留空则不发送）
+  systemAdmin: "AAArhymestyl",
+
   // 委托等级配色：地图标记、侧边栏、任务列表共用同一份定义
   missionLevels: {
     A: { color: "#ff2b2b", label: "A 级 · 紧急", ripple: true },

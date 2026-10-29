@@ -1,4 +1,4 @@
-/* 神降计划·塔 - 应用主逻辑（路由 / 登录 / 注册 / 找回密码 / 主控台） */
+﻿/* 神降计划·塔 - 应用主逻辑（路由 / 登录 / 注册 / 找回密码 / 主控台） */
 (function () {
   "use strict";
 
@@ -13,6 +13,11 @@
     ? window.SDJ_CONFIG.adminInvite
     : "TOWER_ADMIN_2026";
   const ALLOW_ADMIN_REGISTER = !(window.SDJ_CONFIG && window.SDJ_CONFIG.allowAdminRegister === false);
+
+  // 本地 / 调试环境才挂载调试写接口；线上（github.io 等）一律不暴露
+  const DEBUG_TOOLS = /[?&](debug|local)=1/.test(location.search)
+    || /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)
+    || location.protocol === "file:";
   
   const routes = {
     "/login": renderLogin,
@@ -391,8 +396,10 @@
         setSession({ role: acc.role, displayName: acc.displayName, username: acc.username, ts: Date.now(), auto });
         ensureMemberRecord(acc.username, acc.displayName, acc.role);
       } else {
-        // 尚未建立任何本地账号时保留演示登入
-        setSession({ role, displayName: name.trim(), ts: Date.now(), auto });
+        // 本地模式不再提供演示登入：无账号时任意姓名 + 任意密码都能进入，且可自选管理者
+        banner.hidden = false; banner.className = "banner";
+        banner.textContent = "本机还没有任何账号，请先注册后再登录。";
+        return;
       }
       showLoadingScreen({ onComplete: () => navigate("/app") });
     }
@@ -1322,7 +1329,8 @@
     if (!t) return { ok: false, error: "广播内容不能为空" };
     if (t.length > 200) return { ok: false, error: "广播最多 200 字" };
     const sess = getSession();
-    if (!sess || sess.role !== "admin") return { ok: false, error: "需要管理者权限" };
+    // 与全站一致使用「当前视角」判权：管理员切到玩家视角后不再能发广播
+    if (!sess || sess.role !== "admin" || viewRole !== "admin") return { ok: false, error: "需要管理者权限" };
     const min = Math.max(1, Math.min(1440, Number(minutes) || 60));
     if (window.SDJCloud && window.SDJCloud.enabled()) {
       const r = await window.SDJCloud.publishBroadcast(t, min);
@@ -1343,7 +1351,6 @@
     saveState();
     renderBroadcastBanner();
     pushSystemActivity(`管理者发布全服广播：${t}`, "broadcast");
-    saveState();
     return { ok: true };
   }
 
@@ -1406,7 +1413,7 @@
         if (store && Array.isArray(store.items) && store.items.length) { apply(store.items); return; }
       }
     } catch (e) { /* 回退到内置地点 */ }
-    import("./locations.js?v=2").then(mod => apply(mod.SEED_LOCATIONS || [])).catch(() => apply([]));
+    import("./locations.js?v=4").then(mod => apply(mod.SEED_LOCATIONS || [])).catch(() => apply([]));
   }
 
   function openActivityLog(username, isAdmin) {
@@ -1601,7 +1608,9 @@
   async function refreshDashboardMembers(container) {
     if (!container || !container.isConnected) return;
     if (!window.SDJCloud || !window.SDJCloud.enabled()) return;
-    const list = await window.SDJCloud.listProfiles();
+    let list = null;
+    try { list = await window.SDJCloud.listProfiles(); }
+    catch (e) { console.warn("[主控台] 成员统计读取失败：", e); return; }
     if (!list || !container.isConnected) return;
     const live = list.filter(p => !p.banned && p.role !== "admin");
     const players = live.filter(p => p.role === "player").length;
@@ -1647,7 +1656,9 @@
         });
       }
     }
-    const days = p.created_at ? Math.max(0, Math.floor((Date.now() - new Date(p.created_at).getTime()) / 86400000)) : 0;
+    const days = p.created_at && Number.isFinite(new Date(p.created_at).getTime())
+      ? Math.max(0, Math.floor((Date.now() - new Date(p.created_at).getTime()) / 86400000))
+      : 0;
     let avatar = p.avatar_url || "";
     const genderOptions = ["", "男", "女", "其他"].map(g =>
       `<option value="${g}" ${p.gender === g ? "selected" : ""}>${g || "未填写"}</option>`).join("");
@@ -1697,12 +1708,16 @@
           return;
         }
         toast("正在上传头像…");
-        const r = await window.SDJCloud.uploadAvatar(file);
-        if (!r.ok) { toast(r.error || "头像上传失败"); return; }
-        avatar = r.url;
-        avatarEl.style.backgroundImage = `url('${avatar}')`;
-        avatarEl.textContent = "";
-        toast("头像已上传，点击保存资料生效");
+        try {
+          const r = await window.SDJCloud.uploadAvatar(file);
+          if (!r.ok) { toast(r.error || "头像上传失败"); return; }
+          avatar = r.url;
+          avatarEl.style.backgroundImage = `url('${avatar}')`;
+          avatarEl.textContent = "";
+          toast("头像已上传，点击保存资料生效");
+        } catch (err) {
+          toast("头像上传失败：" + (err.message || "未知错误"));
+        }
       };
       box.querySelector("#paSave").onclick = async () => {
         const btn = box.querySelector("#paSave");
@@ -1714,46 +1729,55 @@
           sign: box.querySelector("#paSign").value.trim()
         };
         if (!fields.display_name) { toast("姓名不能为空"); return; }
-        if (fields.age !== "" && (Number(fields.age) < 0 || Number(fields.age) > 150)) {
-          toast("年龄请填写 0 - 150 之间的数字"); return;
+        if (fields.age !== "") {
+          const ageNum = Number(fields.age);
+          // NaN 参与比较恒为 false，原来会让非法年龄直接通过
+          if (!Number.isFinite(ageNum) || ageNum < 0 || ageNum > 150) {
+            toast("年龄请填写 0 - 150 之间的数字"); return;
+          }
         }
         btn.disabled = true;
-        if (cloud) {
-          const r = await window.SDJCloud.saveMyProfile(fields);
+        try {
+          if (cloud) {
+            const r = await window.SDJCloud.saveMyProfile(fields);
+            if (!r.ok) { toast(r.error || "保存失败"); return; }
+            const sess = getSession() || {};
+            sess.displayName = fields.display_name;
+            setSession(sess);
+            const cached = socialProfilesCache.find(x => x.username === (sess.username || fields.display_name));
+            if (cached) {
+              cached.name = fields.display_name;
+              cached.gender = fields.gender;
+              cached.age = fields.age === "" ? "" : Number(fields.age);
+              cached.avatar = fields.avatar_url;
+              cached.sign = fields.sign;
+            }
+          } else {
+            const accs = getAccounts();
+            const sess = getSession() || {};
+            const username = sess.username || sess.displayName;
+            const acc = accs.find(a => a.username === username);
+            if (acc) {
+              acc.displayName = fields.display_name;
+              acc.gender = fields.gender;
+              acc.age = fields.age;
+              acc.avatar = fields.avatar_url;
+              acc.sign = fields.sign;
+              saveAccounts(accs);
+            }
+            sess.displayName = fields.display_name;
+            setSession(sess);
+          }
+          box.remove();
+          toast("个人资料已保存，全体成员可见");
+          emitSocial();
+          const host = document.getElementById("mainContent");
+          if (host && currentMenuId === "dashboard") renderDashboardPage(host, fields.display_name);
+        } catch (err) {
+          toast("保存失败：" + (err.message || "未知错误"));
+        } finally {
           btn.disabled = false;
-          if (!r.ok) { toast(r.error || "保存失败"); return; }
-          const sess = getSession() || {};
-          sess.displayName = fields.display_name;
-          setSession(sess);
-          const cached = socialProfilesCache.find(x => x.username === (sess.username || fields.display_name));
-          if (cached) {
-            cached.name = fields.display_name;
-            cached.gender = fields.gender;
-            cached.age = fields.age === "" ? "" : Number(fields.age);
-            cached.avatar = fields.avatar_url;
-            cached.sign = fields.sign;
-          }
-        } else {
-          const accs = getAccounts();
-          const sess = getSession() || {};
-          const username = sess.username || sess.displayName;
-          const acc = accs.find(a => a.username === username);
-          if (acc) {
-            acc.displayName = fields.display_name;
-            acc.gender = fields.gender;
-            acc.age = fields.age;
-            acc.avatar = fields.avatar_url;
-            acc.sign = fields.sign;
-            saveAccounts(accs);
-          }
-          sess.displayName = fields.display_name;
-          setSession(sess);
         }
-        box.remove();
-        toast("个人资料已保存，全体成员可见");
-        emitSocial();
-        const host = document.getElementById("mainContent");
-        if (host && currentMenuId === "dashboard") renderDashboardPage(host, fields.display_name);
       };
     });
   }
@@ -1791,7 +1815,7 @@
     } catch (e) { /* 缓存损坏时回退到内置数据 */ }
     if (!items.length) {
       try {
-        const mod = await import("./locations.js?v=3");
+        const mod = await import("./locations.js?v=4");
         items = mod.DEFAULT_MAP_ITEMS || [];
       } catch (e) { console.warn("[委托] 地点数据载入失败：", e); }
     }
@@ -2468,7 +2492,7 @@
     }
     try {
       // 经典脚本中 import() 以脚本自身地址为基准，故这里相对 js/app.js 解析
-      const { GlobeMapEngine } = await import("./map.js?v=5");
+      const { GlobeMapEngine } = await import("./map.js?v=7");
       if (!host || !host.isConnected) return;
       globeEngine = new GlobeMapEngine("globe-container", userRole);
       // 暴露给调试与后续扩展（只读使用），也便于控制台验证委托绑定
@@ -2648,7 +2672,12 @@
       toast(`已选坐标 ${e.detail.lat.toFixed(2)}, ${e.detail.lon.toFixed(2)} · 请填写名称`);
     };
     document.addEventListener("sdj:map-pick", onPick);
-    container._cleanupPick = () => document.removeEventListener("sdj:map-pick", onPick);
+    container._cleanupPick = () => {
+      document.removeEventListener("sdj:map-pick", onPick);
+      // 浮窗与抽屉挂在 body / 容器外，切菜单时必须一起收掉，避免遮罩残留到下一个页面
+      closeForm();
+      drawer.classList.remove("show");
+    };
   }
 
   /* =========================================================
@@ -2853,14 +2882,13 @@
 
   /* ---------------- 委托数据模型：奖励 / 时限 / 倒计时 / 迁移 ---------------- */
   const RARITY_META = {
-    N:  { label: "普通", cls: "普通", color: "#b9b9b9", weight: 1 },
-    R:  { label: "精良", cls: "精良", color: "#6fbf73", weight: 2 },
-    SR: { label: "稀有", cls: "稀有", color: "#5aa9ff", weight: 3 },
-    SSR:{ label: "传说", cls: "传说", color: "#c77dff", weight: 4 },
-    SP: { label: "神话", cls: "传说", color: "#ffb300", weight: 5 }
+    N:  { label: "普通", cls: "普通", color: "#b9b9b9" },
+    R:  { label: "精良", cls: "精良", color: "#6fbf73" },
+    SR: { label: "稀有", cls: "稀有", color: "#5aa9ff" },
+    SSR:{ label: "传说", cls: "传说", color: "#c77dff" },
+    SP: { label: "神话", cls: "传说", color: "#ffb300" }
   };
 
-  function rarityLabel(r) { return (RARITY_META[r] || RARITY_META.N).label; }
   function rarityClass(r) { return (RARITY_META[r] || RARITY_META.N).cls; }
 
   function rewardText(m) {
@@ -3097,42 +3125,16 @@
     return (s.wallets && s.wallets[username]) || { points: 0 };
   }
 
-  /* ---------------- 账号清理：仅保留三名指定测试账号 ---------------- */
-  const ROSTER = [
-    { username: "AAArhymestyl", name: "沙利叶", role: "admin", label: "管理者" },
-    { username: "AAAwe", name: "月影", role: "player", label: "玩家" },
-    { username: "AAAwer", name: "血月", role: "contractor", label: "契约者" }
-  ];
-
+  /* ---------------- 存档迁移：只打版本标记，不再删除账号或改写角色 ----------------
+   * 旧版本曾在这里按 ROSTER 强制写 role 并 saveAccounts(kept) 清空其他账号，
+   * 会造成真实账号与成员数据永久丢失，也可能把普通账号提权成管理者。
+   * 现在仅记录迁移版本；历史演示数据由管理员在成员管理中手动清理。 */
   function normalizeRoster() {
-    const accounts = getAccounts();
-    const matched = accounts.filter(a => ROSTER.some(k => a.displayName === k.name || a.username === k.username));
-    if (!matched.length) return false;
-    const kept = matched.map(a => {
-      const target = ROSTER.find(k => a.displayName === k.name || a.username === k.username);
-      return Object.assign({}, a, { username: target.username, displayName: target.name, role: target.role });
-    });
-    saveAccounts(kept);
-
     const s = loadState();
-    s.members = ROSTER.map((k, i) => {
-      const old = (s.members || []).find(m => m.username === k.username || m.name === k.name);
-      return {
-        id: old && old.id ? old.id : "mem" + i,
-        username: k.username,
-        name: k.name,
-        role: k.label,
-        status: "正常",
-        lastSeen: old && old.lastSeen ? old.lastSeen : "—"
-      };
-    });
-    const names = new Set(ROSTER.map(k => k.username));
-    s.notifications = (s.notifications || []).filter(n => names.has(String(n.username)));
-    s.registrationRequests = (s.registrationRequests || []).filter(r => names.has(r.username) || r.status === "approved");
-    s.missionReports = (s.missionReports || []).filter(r => !r.applicant || names.has(r.applicant.username));
+    if ((s.rosterVersion || 0) >= 2) return false;
     s.rosterVersion = 2;
     saveState();
-    return true;
+    return false;
   }
 
   function sweepTimeouts(silent) {
@@ -3215,11 +3217,13 @@
     return (profiles || []).map(p => [p.username, p.role, p.display_name, p.banned ? 1 : 0].join("|")).join(",");
   }
   function memberPageIsEditing() {
-    if (document.querySelector(".modal-overlay")) return true;
+    // 只认成员页自身区域内的输入控件：其它模块的弹窗不应长期阻断成员表刷新
     const host = document.getElementById("mainContent");
+    if (!host) return false;
     const active = document.activeElement;
-    if (!host || !active || !host.contains(active)) return false;
-    return /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName);
+    const inHost = active && host.contains(active) && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName);
+    if (inHost) return true;
+    return !!host.querySelector(".modal-overlay");
   }
   async function maybeRefreshMemberPage(host) {
     if (!host || !host.isConnected) return;
@@ -3355,13 +3359,21 @@
     const stamp = String(world.updated_at || "");
     if (!force && stamp && stamp === worldStamp) return false;
     worldStamp = stamp;
-    appState = applyCloudWorld(world, appState || defaultState());
+    // 合并基底必须是本机存档：用 defaultState() 作 base 会把 world 未包含的列
+    //（forum / forumHot / registerBypass 等）清空
+    appState = applyCloudWorld(world, appState || loadState());
     try { localStorage.setItem(STATE_KEY, JSON.stringify(appState)); } catch (e) { /* ignore */ }
     return true;
   }
 
   function saveState() {
-    try { localStorage.setItem(STATE_KEY, JSON.stringify(appState)); } catch (e) {}
+    let ok = true;
+    try { localStorage.setItem(STATE_KEY, JSON.stringify(appState)); }
+    catch (e) {
+      // 配额满 / 隐私模式时静默失败会让「操作成功、刷新后丢失」，必须显式上报
+      ok = false;
+      console.warn("[本地存储] 世界数据保存失败（可能空间不足）：", e);
+    }
     // 全服数据只有管理者能写（Supabase RLS 同样会拦截非管理员）
     const s = getSession();
     if (window.SDJCloud && window.SDJCloud.enabled() && s && s.role === "admin") {
@@ -3372,6 +3384,7 @@
         window.SDJCloud.saveWorld(patch).catch(err => console.warn("[云端] 世界数据保存失败：", err));
       }, 800);
     }
+    return ok;
   }
 
   /* 状态缓存失效：跨标签页写入时，本页必须重新读取 localStorage，
@@ -3406,8 +3419,12 @@
     getAccounts().filter(a => a.role === "admin").forEach(a => names.add(a.username));
     const sess = getSession();
     if (sess && sess.role === "admin") names.add(sess.username || sess.displayName);
-    // 本机还没有任何本地账号时，至少通知内置的最高管理者，避免注册页告警无人接收
-    if (!names.size) ROSTER.filter(k => k.role === "admin").forEach(k => names.add(k.username));
+    // 本机还没有任何本地账号时，至少通知当前登录者或配置里的兜底管理员
+    if (!names.size) {
+      const cur = getSession();
+      if (cur && cur.username) names.add(cur.username);
+      else if (window.SDJ_CONFIG && window.SDJ_CONFIG.systemAdmin) names.add(String(window.SDJ_CONFIG.systemAdmin));
+    }
     names.forEach(u => pushNotification(u, text));
     return names.size;
   }
@@ -3484,12 +3501,20 @@
       if (!(window.SDJCloud && window.SDJCloud.enabled())) return;
       const s = getSession();
       if (!s || s.role !== "admin") return;
-      window.SDJCloud.saveMap(payload).catch(err => console.warn("[云端] 地图保存失败：", err));
+      window.SDJCloud.saveMap(payload).catch(err => {
+        console.warn("[云端] 地图保存失败：", err);
+        toast("地图未同步到云端：" + (err.message || "未知错误"));
+      });
     }
   };
 
   function escHTML(v) {
     return String(v).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  // 云端帖子使用 uuid 主键；本地旧帖是 "f"+时间戳。两者判定必须统一
+  function isCloudId(id) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(id || ""));
   }
 
   function toast(message) {
@@ -3611,6 +3636,8 @@
     const ok = await pushWorldNow();
     if (!ok) {
       toast("卡牌保存失败：云端写入未成功，请检查网络后重试");
+      // 回滚内存改动，避免「本地已改、下次强制同步又静默改回去」
+      reloadState();
       return false;
     }
     await syncWorldFromCloud(true);
@@ -3754,9 +3781,9 @@
   }
 
   function bindCardNodes(panel, nodes, isAdmin, role, container, parent) {
-    panel.querySelectorAll("[data-open]").forEach(el => {
-      el.onclick = () => {
-        cardPath = parent ? cardPath.concat(el.dataset.open) : [el.dataset.open];
+    panel.querySelectorAll("[data-open]").forEach(node => {
+      node.onclick = () => {
+        cardPath = parent ? cardPath.concat(node.dataset.open) : [node.dataset.open];
         cardPendingOnly = false;
         renderCardPanel(panel, role, currentUserKey(), isAdmin, container);
       };
@@ -4041,7 +4068,20 @@
     };
   }
 
-  // 回归测试 / 外部调用接口
+  // 卡牌写接口只允许管理者调用：此前任何玩家都能在控制台改卡池 / 发卡 / 清空持有量
+  // 回归测试台以玩家身份运行，故本地 / 调试环境放行；线上非管理员一律拒绝
+  function cardsWriteAllowed() {
+    if (DEBUG_TOOLS) return true;
+    const s = getSession();
+    return !!(s && s.role === "admin" && viewRole === "admin");
+  }
+  function denyCardsWrite() {
+    console.warn("[卡牌] 该操作需要管理者权限");
+    toast("需要管理者权限");
+    return false;
+  }
+
+  // 回归测试 / 外部调用接口（写方法均需管理者权限）
   window.SDJCards = {
     trees: () => cardData().trees,
     roleTree: (role) => cardRoleTree(role),
@@ -4050,8 +4090,12 @@
     cards: (poolId) => { const p = cardNodeById(poolId); return p && p.type === "pool" ? cardEffective(p) : []; },
     count: (id) => { const n = cardNodeById(id); return n ? cardNodeCount(n) : 0; },
     held: (username, poolId, cardId) => cardHeld(username, poolId, cardId),
-    setHeld: (username, poolId, cardId, n) => { cardSetHeld(username, poolId, cardId, n); saveState(); },
+    setHeld: (username, poolId, cardId, n) => {
+      if (!cardsWriteAllowed()) return denyCardsWrite();
+      cardSetHeld(username, poolId, cardId, n); saveState(); return true;
+    },
     applyEdit: (poolId, cardId, patch) => {
+      if (!cardsWriteAllowed()) return denyCardsWrite();
       const p = cardNodeById(poolId);
       if (!p) return false;
       const cs = loadState().cards;
@@ -4063,18 +4107,23 @@
       return true;
     },
     rename: (nodeId, name) => {
+      if (!cardsWriteAllowed()) return denyCardsWrite();
       const cs = loadState().cards;
       if (!name || name === (cardNodeById(nodeId) || {}).name) delete cs.renames[nodeId];
       else cs.renames[nodeId] = name;
       saveState();
+      return true;
     },
     addCard: (poolId, card) => {
+      if (!cardsWriteAllowed()) return denyCardsWrite();
       const cs = loadState().cards;
       cs.added[poolId] = cs.added[poolId] || [];
       cs.added[poolId].push(card);
       saveState();
+      return true;
     },
     removeCard: (poolId, cardId) => {
+      if (!cardsWriteAllowed()) return denyCardsWrite();
       const cs = loadState().cards;
       const key = cardKey(poolId, cardId);
       const idx = (cs.added[poolId] || []).findIndex(c => c.id === cardId);
@@ -4082,15 +4131,18 @@
       else cs.removed[key] = true;
       delete cs.overrides[key];
       saveState();
+      return true;
     },
     pending: (poolId) => {
       const p = cardNodeById(poolId);
       return p && p.type === "pool" ? cardEffective(p).filter(c => !c.desc).length : 0;
     },
     reset: () => {
+      if (!cardsWriteAllowed()) return denyCardsWrite();
       const s = loadState();
       s.cards = { version: 1, renames: {}, overrides: {}, added: {}, removed: {}, holdings: {} };
       saveState();
+      return true;
     },
     refresh: () => {
       const host = document.getElementById("mainContent");
@@ -4164,13 +4216,13 @@
     const acceptedByMe = (m) => (m.acceptors || []).some(a => a.username === myName);
     const inTab = (k) => {
       // 未满员保持 available：已接取者按自己的视角归入“进行中”，其他成员仍可在“可接取”看到
-      if (k === "available") return missions.filter(m => (m.status === "available" || m.status === "expired") && !acceptedByMe(m));
+      if (k === "available") return missions.filter(m => m.status === "available" && !acceptedByMe(m));
       if (k === "active") return missions.filter(m => m.status === "active" || m.status === "review" || (m.status === "available" && acceptedByMe(m)));
-      if (k === "done") return missions.filter(m => m.status === "done" || (adminView && m.status === "failed"));
-      if (k === "failed") return missions.filter(m => m.status === "failed");
+      if (k === "done") return missions.filter(m => m.status === "done" || (adminView && (m.status === "failed" || m.status === "expired")));
+      if (k === "failed") return missions.filter(m => m.status === "failed" || (m.status === "expired" && !adminView));
       return [];
     };
-    const countOf = (k) => k === "publish" ? missions.filter(m => m.status === "available").length : inTab(k).length;
+    const countOf = (k) => inTab(k).length;
 
     const pendingReport = (mid) => (s.missionReports || []).find(r => r.missionId === mid && r.status === "pending");
 
@@ -4235,7 +4287,9 @@
 
     let body = "";
     if (adminView && missionTab === "publish") {
-      const recent = missions.slice(0, 3);
+      const recent = missions.slice()
+        .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+        .slice(0, 3);
       body = `
         <div class="mission-cta panel-cut">
           <div>
@@ -4259,7 +4313,7 @@
     pageShell(container, {
       title: adminView ? "任务管理" : "委托任务",
       en: adminView ? "MISSION MGMT" : "COMMISSIONS",
-      tools: `<div class="tabs">${tabs.map(([k, label]) => `<button class="tab-btn ${k === missionTab ? "active" : ""}" data-tab="${k}">${label} ${countOf(k)}</button>`).join("")}</div>`,
+      tools: `<div class="tabs">${tabs.map(([k, label]) => `<button class="tab-btn ${k === missionTab ? "active" : ""}" data-tab="${k}">${label}${k === "publish" ? "" : " " + countOf(k)}</button>`).join("")}</div>`,
       body
     });
 
@@ -4401,8 +4455,13 @@
         if (txt === "已截止") expiredNow = true;
       });
       if (expiredNow) {
-        stopMissionTick();
-        if (sweepMissionDeadlines(true) && container.isConnected) renderMissionPage(container, isAdmin);
+        if (window.SDJCloud && window.SDJCloud.enabled()) {
+          // 云端由服务端结算：不停止倒计时（runCloudSweep 自带 30s 节流，完成后会重绘）
+          runCloudSweep();
+        } else {
+          stopMissionTick();
+          if (sweepMissionDeadlines(true) && container.isConnected) renderMissionPage(container, isAdmin);
+        }
       }
     }, 1000);
   }
@@ -4543,6 +4602,7 @@
 
   function stopForumTimers() {
     if (forumHotTimer) { clearInterval(forumHotTimer); forumHotTimer = null; }
+    if (forumSearchTimer) { clearTimeout(forumSearchTimer); forumSearchTimer = null; }
   }
 
   function forumPostsFor(section, query) {
@@ -4710,10 +4770,14 @@
     // 全局搜索（标题 / 正文 / 发帖人）
     const searchInput = container.querySelector("#forumSearchInput");
     if (searchInput) {
-      searchInput.addEventListener("input", () => {
+      searchInput.addEventListener("input", (e) => {
+        // 中文输入法组字期间不重绘，否则候选框会被打断
+        if (e.isComposing) return;
         clearTimeout(forumSearchTimer);
         const val = searchInput.value;
         forumSearchTimer = setTimeout(() => {
+          // 防抖回调触发时页面可能已切走，必须校验归属，否则会覆盖新页面
+          if (!container.isConnected || currentMenuId !== "forum") return;
           forumState.query = val.trim();
           forumState.page = 1;
           renderForumPage(container, isAdmin);
@@ -4767,7 +4831,7 @@
         e.stopPropagation();
         const p = loadState().forum.find(x => x.id === btn.dataset.like);
         if (!p) return;
-        if (cloud && /^[0-9a-f-]{36}$/i.test(String(p.id))) {
+        if (cloud && isCloudId(p.id)) {
           const r = await window.SDJCloud.toggleForumLike(p.id);
           if (!r.ok) { toast(r.error || "点赞失败"); return; }
           p.liked = !!r.liked;
@@ -4803,7 +4867,7 @@
         const next = !p.essence;
         p.essence = next;
         saveState();
-        if (cloud && /^[0-9a-f-]{36}$/i.test(String(p.id))) {
+        if (cloud && isCloudId(p.id)) {
           const ok = await window.SDJCloud.setForumEssence(p.id, next);
           if (!ok) {
             p.essence = !next;
@@ -4823,7 +4887,7 @@
       btn.onclick = async (e) => {
         e.stopPropagation();
         const id = btn.dataset.del;
-        if (cloud) {
+        if (cloud && isCloudId(id)) {
           const ok = await window.SDJCloud.removeForumPost(id);
           if (!ok) { toast("删除失败：仅作者或管理者可删除"); return; }
         }
@@ -5055,9 +5119,14 @@
         cur.liked = nextLiked;
         cur.likes = nextLikes;
         saveState();
-        if (cloud) {
-          const ok = await window.SDJCloud.setForumLikes(cur.id, nextLikes);
-          if (!ok) {
+        if (cloud && isCloudId(cur.id)) {
+          // 与列表页统一走原子 RPC，避免两台设备用绝对值覆盖对方计数
+          const r = await window.SDJCloud.toggleForumLike(cur.id);
+          if (r && r.ok) {
+            cur.liked = !!r.liked;
+            cur.likes = Number(r.likes) || 0;
+            saveState();
+          } else if (!r || !r.ok) {
             cur.liked = !nextLiked;
             cur.likes = Math.max(0, nextLikes + (nextLiked ? -1 : 1));
             saveState();
@@ -5075,7 +5144,7 @@
           const next = !cur.essence;
           cur.essence = next;
           saveState();
-          if (cloud && /^[0-9a-f-]{36}$/i.test(String(postId))) {
+          if (cloud && isCloudId(postId)) {
             const ok = await window.SDJCloud.setForumEssence(postId, next);
             if (!ok) {
               cur.essence = !next;
@@ -5092,7 +5161,10 @@
       const deleteBtn = wrap.querySelector("#detailDelete");
       if (deleteBtn) {
         deleteBtn.onclick = async () => {
-          if (cloud) window.SDJCloud.removeForumPost(postId).catch(() => {});
+          if (cloud && isCloudId(postId)) {
+            const ok = await window.SDJCloud.removeForumPost(postId);
+            if (!ok) { toast("删除失败：仅作者或管理者可删除"); return; }
+          }
           const st = loadState();
           st.forum = (st.forum || []).filter(x => x.id !== postId);
           st.forumHot = (st.forumHot || []).filter(x => x !== postId);
@@ -5132,7 +5204,7 @@
         const input = wrap.querySelector("#commentInput");
         const text = input.value.trim();
         if (!text) { toast("评论内容不能为空"); return; }
-        if (cloud && /^[0-9a-f-]{36}$/i.test(String(postId))) {
+        if (cloud && isCloudId(postId)) {
           const r = await window.SDJCloud.addForumComment(postId, text, replyTo || "");
           if (!r.ok) { toast(r.error || "评论失败"); return; }
           const cur2 = loadState().forum.find(x => x.id === postId);
@@ -5185,7 +5257,7 @@
       if (viewRecorded) return;
       viewRecorded = true;
       const me = session.username || session.displayName;
-      if (cloud && /^[0-9a-f-]{36}$/i.test(String(postId))) {
+      if (cloud && isCloudId(postId)) {
         const r = await window.SDJCloud.addForumView(postId);
         if (r.ok) {
           const cur = loadState().forum.find(x => x.id === postId);
@@ -5334,7 +5406,14 @@
           images.push(r.url);
         } else {
           const url = await readFileDataURL(file);
-          if (url) images.push(url);
+          if (url) {
+            const used = images.reduce((n, u) => n + String(u).length, 0);
+            if (used + url.length > 3 * 1024 * 1024) {
+              toast("本地模式配图总大小超过 3MB，请压缩后再上传（接入云端后无此限制）");
+              continue;
+            }
+            images.push(url);
+          }
         }
       }
       renderImages();
@@ -5397,7 +5476,15 @@
         const st = loadState();
         st.forum = st.forum || [];
         st.forum.unshift(cloud ? row : post);
-        saveState();
+        if (!saveState()) {
+          reloadState();
+          if (!cloud) {
+            toast("本地存储空间不足，帖子未保存");
+            btn.disabled = false;
+            return;
+          }
+          toast("本地缓存写入失败，帖子已提交云端，刷新后可见");
+        }
         forumState = { section, page: 1, query: "" };
         pendingMenu = "forum";
         toast("帖子已发布");
@@ -5697,6 +5784,12 @@
           npcReqs.forEach(r => byId.set(r.id, r));
           socialOut.friendRequests = Array.from(byId.values());
         }
+        // 推送快照时结构键被主动剔除，远端本就不含它们：
+        // 拉取必须保留本机值，否则好友 / 群 / 分组会被整份覆盖清空
+        ["friends", "friendRequests", "groups", "groupRequests", "groupsSeq",
+         "friendTags", "friendTagOf", "friendSince", "reads", "presence"].forEach(k => {
+          if (socialOut[k] === undefined || socialOut[k] === null) socialOut[k] = local[k];
+        });
         localStorage.setItem(SOCIAL_KEY, JSON.stringify(socialOut));
       }
       if (remote.msgs) {
@@ -5772,7 +5865,21 @@
       npc: false,
       sign: ""
     }));
-    return ROSTER.map(k => ({ username: k.username, name: k.name, role: k.role, npc: false, sign: "" }));
+    // 没有本地账号表时（例如回归台只写 sessionStorage）退回成员表 + 当前登录者，
+    // 不再使用内置的三名演示账号
+    const members = (loadState().members || []).filter(m => m && m.username).map(m => ({
+      username: m.username,
+      name: m.name || m.username,
+      role: m.role === "管理者" ? "admin" : (m.role === "契约者" ? "contractor" : "player"),
+      npc: false,
+      sign: ""
+    }));
+    if (members.length) return members;
+    const sess = getSession();
+    if (sess && sess.username) {
+      return [{ username: sess.username, name: sess.displayName || sess.username, role: sess.role || "player", npc: false, sign: "" }];
+    }
+    return [];
   }
 
   async function ensureSocialProfiles(force) {
@@ -5901,6 +6008,10 @@
   }
 
   async function sendFriendRequest(from, to, message) {
+    // 参数与关系校验先于云端调用：原来云端分支直接打 RPC，本地校验被整段跳过
+    if (!from || !to) return { ok: false, error: "参数错误" };
+    if (from === to) return { ok: false, error: "不能添加自己为好友" };
+    if (areFriends(from, to)) return { ok: false, error: "你们已经是好友了" };
     if (window.SDJCloud && window.SDJCloud.enabled() && !isNpcUser(to)) {
       const r = await window.SDJCloud.friendRequest(to, message);
       if (!r.ok) return r;
@@ -5909,9 +6020,6 @@
       return { ok: true, request: r.request };
     }
     const s = loadSocial();
-    if (!from || !to) return { ok: false, error: "参数错误" };
-    if (from === to) return { ok: false, error: "不能添加自己为好友" };
-    if (areFriends(from, to)) return { ok: false, error: "你们已经是好友了" };
     const reverse = s.friendRequests.find(r => r.from === to && r.to === from && r.status === "pending");
     if (reverse) return { ok: false, error: "对方已向你发送好友申请，请到通知中处理" };
     if (pendingFriendBetween(from, to)) return { ok: false, error: "已发送请求，等待对方同意" };
@@ -6487,7 +6595,7 @@
         out.push({
           kind: "friend", id: f, convId: cid,
           name: nameOf(f), initial: socialInitial(nameOf(f)),
-          last: last ? (last.type === "system" ? last.text : last.text) : "你们已成为好友，打个招呼吧",
+          last: last ? last.text : "你们已成为好友，打个招呼吧",
           at: last ? last.at : (s.friendSince[pairKey(username, f)] || 0),
           unread: unreadOf(cid, username),
           online: isOnline(f)
@@ -6518,16 +6626,16 @@
   function groupMembersOnline(g) {
     let online = 0;
     (g.members || []).forEach(m => { if (isOnline(m)) online++; });
-    return { online, offline: g.members.length - online };
+    return { online, offline: (g.members || []).length - online };
   }
 
   function contactGroupLists(username) {
     const all = loadSocial().groups.filter(g => g.status === "active");
     return {
-      all: all.filter(g => g.members.includes(username) || g.admins.includes(username) || g.owner === username),
+      all: all.filter(g => (g.members || []).includes(username) || (g.admins || []).includes(username) || g.owner === username),
       created: all.filter(g => g.owner === username),
       managed: all.filter(g => (g.admins || []).includes(username) && g.owner !== username),
-      joined: all.filter(g => g.members.includes(username) && g.owner !== username)
+      joined: all.filter(g => (g.members || []).includes(username) && g.owner !== username)
     };
   }
 
@@ -7234,9 +7342,12 @@
     socialTick = setInterval(() => {
       const me = currentSocialUser();
       if (!me) return;
-      touchPresence(me);
-      saveSocial();
+      // 在线状态 60 秒内不重复写盘：原来每 15 秒 saveSocial 会连带把整份快照推到云端
+      const before = loadSocial().presence[me] || 0;
+      const needTouch = Date.now() - before > 60000;
+      if (needTouch) touchPresence(me);
       const changed = sweepSocial();
+      if (needTouch || changed) saveSocial();
       if (changed) {
         if (socialInputBusy()) updateLiveCounts();
         else socialRerender(true);
@@ -7429,6 +7540,8 @@
       return;
     }
     if (e.target.id === "socialMsgInput" && e.key === "Enter" && !e.shiftKey) {
+      // 中文输入法选词时的回车不能直接发送
+      if (e.isComposing || e.keyCode === 229) return;
       e.preventDefault();
       doSendMessage();
     }
@@ -7839,7 +7952,9 @@
     const avatarHtml = u.avatar
       ? `<span class="avatar big has-photo" style="background-image:url('${escHTML(u.avatar)}')"></span>`
       : `<span class="avatar big">${escHTML(socialInitial(u.name))}</span>`;
-    const days = u.createdAt ? Math.max(0, Math.floor((Date.now() - new Date(u.createdAt).getTime()) / 86400000)) : null;
+    const days = u.createdAt && Number.isFinite(new Date(u.createdAt).getTime())
+      ? Math.max(0, Math.floor((Date.now() - new Date(u.createdAt).getTime()) / 86400000))
+      : null;
     const metaRow = (k, v) => v || v === 0 ? `<div class="profile-row"><span>${k}</span><em>${escHTML(String(v))}</em></div>` : "";
     const btnHtml = friend
       ? '<button class="btn-sm" data-x="chat">发消息</button><button class="btn-sm danger" data-x="del">删除好友</button>'
@@ -7942,13 +8057,13 @@
     const conf = {
       name: { title: "编辑群名称", label: "2–20 字", value: g.name, multiline: false },
       notice: { title: "编辑群公告", label: "最多 500 字", value: g.notice, multiline: true },
-      intro: { title: "编辑群简介", label: "最多 300 字", value: g.intro, multiline: true }
+      intro: { title: "编辑群简介", label: "最多 300 字", value: g.intro, multiline: true, maxLen: 300 }
     }[field];
     if (!conf) return;
     openSocialModal(`<div class="modal-title">${conf.title}</div>
       <div class="field"><div class="field-label">${conf.label}</div>
         ${conf.multiline
-          ? `<textarea class="editor-body" id="gfInput" maxlength="500">${escHTML(conf.value || "")}</textarea>`
+          ? `<textarea class="editor-body" id="gfInput" maxlength="${conf.multiline && conf.maxLen ? conf.maxLen : 500}">${escHTML(conf.value || "")}</textarea>`
           : `<input class="comment-input" id="gfInput" maxlength="20" value="${escHTML(conf.value || "")}">`}
       </div>
       <div class="modal-actions"><button class="btn-sm" id="gfOk">保存</button><button class="btn-sm ghost" id="gfCancel">取消</button></div>`, (overlay) => {
@@ -8003,15 +8118,18 @@
   };
 
   // 供回归测试检查标签页会话隔离（sessionStorage 优先于 localStorage）
-  window.SDJSession = {
-    current: () => getSession(),
-    tab: () => readTabSession(),
-    set: (s) => setSession(s),
-    clear: () => clearSession(),
-    local: () => {
-      try { return JSON.parse(localStorage.getItem(SESSION_KEY)) || null; } catch (e) { return null; }
-    }
-  };
+  // 仅本地 / 调试环境挂载：线上暴露会话写入接口等于给出越权工具
+  if (DEBUG_TOOLS) {
+    window.SDJSession = {
+      current: () => getSession(),
+      tab: () => readTabSession(),
+      set: (s) => setSession(s),
+      clear: () => clearSession(),
+      local: () => {
+        try { return JSON.parse(localStorage.getItem(SESSION_KEY)) || null; } catch (e) { return null; }
+      }
+    };
+  }
 
   /* ---------------- 议会（暂未开放，全身份统一占位） ---------------- */
   function renderCouncilPage(container, isAdmin) {
@@ -8078,6 +8196,8 @@
       localStorage.removeItem(STATE_KEY);
       localStorage.removeItem(SOCIAL_KEY);
       localStorage.removeItem(SOCIAL_MSG_KEY);
+      // 这些时间戳 / 迁移标记不清掉，会让清除后的首次拉取判定失真
+      ["sdj_map_data_v2", SOCIAL_CLOUD_AT, NPC_MIGRATED_KEY].forEach(k => localStorage.removeItem(k));
       appState = null;
       reloadSocial();
       reloadSocialMsgs();
@@ -8595,5 +8715,12 @@
       if (getPath() === "/login") navigate("/app");
       else render();
     }).catch(err => console.warn("[云端] 启动失败：", err));
+
+    // 管理员心跳：数据库未启用 pg_cron 时的兜底，定时触发服务端超时结算
+    // （runCloudSweep 内部只允许 admin 且带 30 秒节流，重复触发无副作用）
+    window.setInterval(() => {
+      const s = getSession();
+      if (s && s.role === "admin") runCloudSweep(true);
+    }, 5 * 60 * 1000);
   }
 })();

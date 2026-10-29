@@ -136,11 +136,13 @@
   async function saveMap(payload) {
     if (!enabled()) return;
     const c = await ensureClient();
-    await c.from("world_state").upsert({
+    const { error } = await c.from("world_state").upsert({
       id: 1,
       map_locations: payload,
       updated_at: new Date().toISOString()
     });
+    // 与 saveWorld 保持一致：RLS 拒绝 / 列缺失时必须抛错，否则管理员以为保存成功
+    if (error) throw error;
   }
 
   // 启动时恢复登录态与全服数据
@@ -228,10 +230,6 @@
     createdAt: r.created_at ? new Date(r.created_at).getTime() : 0,
     comments: Array.isArray(r.comments) ? r.comments : [],
     likedBy: Array.isArray(r.liked_by) ? r.liked_by.map(x => x && x.username).filter(Boolean) : []
-  });
-  const approvalRow = (r) => ({
-    id: r.id, name: r.name, role: r.role, type: r.type,
-    reason: r.reason || "", time: relTime(r.created_at), status: r.status
   });
 
   async function listForum() {
@@ -347,12 +345,13 @@
   }
 
   // 服务端合并：消息按 id 取并集，避免两台设备各自整份覆盖对方的消息
+  // 返回值统一为 { ok, error?, updatedAt? }，不再混用 false / 对象
   async function saveSocialSnapshot(payload) {
-    if (!enabled()) return false;
+    if (!enabled()) return { ok: false, error: "云端未配置" };
     const r = await rpc("social_merge", { p_data: payload });
     if (!r.ok) {
       console.warn("[云端] 社交合并失败：", r.error);
-      return false;
+      return { ok: false, error: r.error || "社交合并失败" };
     }
     // 用服务端时间戳回写，避免本机时钟偏快导致后续 pull 永远认为「没有新数据」
     return { ok: true, updatedAt: Number(r.updatedAt) || Number(payload.updatedAt) || Date.now() };
@@ -439,26 +438,6 @@
     }
   }
 
-  async function listApprovals() {
-    if (!enabled()) return null;
-    try {
-      const c = await ensureClient();
-      const { data, error } = await c.from("approvals").select("*").order("created_at", { ascending: false });
-      if (error) throw error;
-      return (data || []).map(approvalRow);
-    } catch (e) { console.warn("[云端] 读取审批失败：", e); return null; }
-  }
-
-  async function setApprovalStatus(id, status) {
-    if (!enabled()) return false;
-    try {
-      const c = await ensureClient();
-      const { error } = await c.from("approvals").update({ status }).eq("id", id);
-      if (error) throw error;
-      return true;
-    } catch (e) { console.warn("[云端] 更新审批失败：", e); return false; }
-  }
-
   // 订阅某张表的变更，返回 Promise<handle>
   // 断线/心跳超时/JWT 过期时自动退避重连，避免长时间挂着页面后彻底收不到推送
   function watch(table, onChange) {
@@ -522,10 +501,12 @@
   // ---------------- 玩家动作 RPC（跨设备写入 world_state） ----------------
   const RPC_TIMEOUT_MS = 15000;
   function withTimeout(promise, ms) {
-    return Promise.race([
-      promise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error("请求超时（" + Math.round(ms / 1000) + " 秒）")), ms))
-    ]);
+    let timer = null;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error("请求超时（" + Math.round(ms / 1000) + " 秒）")), ms);
+    });
+    // 请求先返回时清掉定时器，避免每次 RPC 都挂着一个 15s 的悬空计时器
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
   }
 
   async function rpc(name, params) {
@@ -639,8 +620,6 @@
     myProfile,
     saveMyProfile,
     uploadAvatar,
-    listApprovals,
-    setApprovalStatus,
     loadSocialSnapshot,
     saveSocialSnapshot,
     acceptMission,

@@ -1,10 +1,14 @@
-/* 神降计划·塔 - 3D 地图引擎（Three.js） */
+﻿/* 神降计划·塔 - 3D 地图引擎（Three.js） */
 import * as THREE from 'three';
-  import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-  import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-  import { SEED_LOCATIONS, AREA_LABELS } from './locations.js?v=3';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { SEED_LOCATIONS, AREA_LABELS } from './locations.js?v=4';
 
-  const MAP_STORE_KEY = 'sdj_map_data_v2';
+const MAP_STORE_KEY = 'sdj_map_data_v2';
+
+// 统一的 HTML 转义（此前同一份实现散落在 addLabel / renderLocationMissions / showTemporaryMarker 三处）
+const escHtml = (s) => String(s == null ? '' : s)
+  .replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   export class GlobeMapEngine {
     constructor(containerId, userRole) {
@@ -50,6 +54,10 @@ import * as THREE from 'three';
       this.labels = [];
       this.raycaster = new THREE.Raycaster();
       this.mouse = new THREE.Vector2();
+      // 动画循环里复用的临时向量，避免每帧 new Vector3 造成 GC 抖动
+      this._vLabel = new THREE.Vector3();
+      this._vDir = new THREE.Vector3();
+      this._vCamDir = new THREE.Vector3();
       
       this.init();
     }
@@ -205,6 +213,7 @@ import * as THREE from 'three';
       };
       if (store && Array.isArray(store.items)) {
         const removed = Array.isArray(store.removed) ? store.removed : [];
+        this._removedIds = removed.slice();
         const savedIds = new Set(store.items.map(i => i.id));
         // 已保存的地点保留管理员改动；新增的种子地点自动补齐；被删除的种子不复活
         this.labelsData = store.items.map(cleanLoc);
@@ -233,7 +242,8 @@ import * as THREE from 'three';
     }
 
     saveMapData() {
-      const payload = { v: 2, items: this.labelsData, removed: this._removedIds || [] };
+      this._removedIds = this._removedIds || [];
+      const payload = { v: 2, items: this.labelsData, removed: this._removedIds };
       try { localStorage.setItem(MAP_STORE_KEY, JSON.stringify(payload)); } catch (e) {}
       // 云端模式下同步到 world_state.map_locations（未配置 Supabase 时为空操作）
       if (window.SDJMap && typeof window.SDJMap.push === "function") {
@@ -266,7 +276,7 @@ import * as THREE from 'three';
 
     // 统一的地点标签创建入口（初始数据与管理员新增共用）
     addLabel(data) {
-      const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+      const esc = escHtml;
       const div = document.createElement('div');
       div.className = `map-label label-l${data.level}`;
       div.innerHTML = `
@@ -342,6 +352,7 @@ import * as THREE from 'three';
       const dl = m && m.deadline;
       if (!dl || !dl.endsAt) return '长期有效';
       const d = new Date(dl.endsAt);
+      if (!Number.isFinite(d.getTime())) return '长期有效';
       const p = n => String(n).padStart(2, '0');
       return `截止 ${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
     }
@@ -351,7 +362,7 @@ import * as THREE from 'three';
       if (!box) return;
       this._activeLoc = loc;
       const isAdmin = this.userRole === 'admin';
-      const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+      const esc = escHtml;
       const palette = this.missionPalette();
       const sess = (window.SDJSession && typeof window.SDJSession.current === 'function')
         ? window.SDJSession.current() : null;
@@ -435,7 +446,7 @@ import * as THREE from 'three';
     // 帖子自定义坐标：地图上没有对应地点时，临时显示一个标记并聚焦
     showTemporaryMarker(loc) {
       if (!loc || !Number.isFinite(Number(loc.lat)) || !Number.isFinite(Number(loc.lon))) return;
-      const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+      const esc = escHtml;
       if (this._tempMarker) {
         this.labelGroup.remove(this._tempMarker);
         this._tempMarker = null;
@@ -506,7 +517,7 @@ import * as THREE from 'three';
       let addBtn = null;
       if (this.isAdmin) {
         const toolbar = document.getElementById('adminToolbar');
-        toolbar.style.display = 'flex';
+        if (toolbar) toolbar.style.display = 'flex';
         addBtn = document.getElementById('btnAddMode');
         
         const setIdle = () => {
@@ -520,14 +531,18 @@ import * as THREE from 'three';
         };
         this._resetAddMode = setIdle;
 
-        addBtn.onclick = () => {
+        // 页面结构缺失时不能直接 TypeError 打断整张地图（历史上踩过同类坑）
+        if (!addBtn) console.warn('[地图] 缺少 #btnAddMode，管理员工具条未启用');
+        if (addBtn) addBtn.onclick = () => {
           this.isAddMode = !this.isAddMode;
           if (this.isAddMode) {
             addBtn.classList.add('active');
             addBtn.innerHTML = '点击球体选择位置…';
             const hint = document.getElementById('mapHint');
-            hint.textContent = "管理员模式：在地形上点击以创建新地点";
-            hint.classList.add('show');
+            if (hint) {
+              hint.textContent = "管理员模式：在地形上点击以创建新地点";
+              hint.classList.add('show');
+            }
           } else {
             setIdle();
           }
@@ -732,10 +747,10 @@ import * as THREE from 'three';
             <div class="dock-group">
               <div class="dock-group-title"><i style="background:${meta.color}"></i>${meta.label || g.level + " 级"}<span>${g.items.length}</span></div>
               ${g.items.map(a => `
-                <div class="dock-item" data-mid="${a.id}">
+                <div class="dock-item" data-mid="${escHtml(a.id)}">
                   <span class="dock-dot" style="background:${meta.color}"></span>
-                  <span class="dock-name">${a.title}</span>
-                  <span class="dock-loc">${a.loc.name}</span>
+                  <span class="dock-name">${escHtml(a.title)}</span>
+                  <span class="dock-loc">${escHtml(a.loc.name)}</span>
                 </div>`).join("")}
             </div>`;
         }).join("");
@@ -745,7 +760,7 @@ import * as THREE from 'three';
         this.dockListEl.innerHTML += `
           <div class="dock-group">
             <div class="dock-group-title warn"><i></i>地点未匹配<span>${unresolved.length}</span></div>
-            ${unresolved.map(m => `<div class="dock-item unresolved"><span class="dock-dot"></span><span class="dock-name">${m.title}</span><span class="dock-loc">${m.loc || "未填写"}</span></div>`).join("")}
+            ${unresolved.map(m => `<div class="dock-item unresolved"><span class="dock-dot"></span><span class="dock-name">${escHtml(m.title)}</span><span class="dock-loc">${escHtml(m.loc || "未填写")}</span></div>`).join("")}
           </div>`;
       }
 
@@ -796,7 +811,7 @@ import * as THREE from 'three';
       this.terrainMesh.material.uniforms.uDarkness.value = t * 0.9;
       this.pMat.opacity = t;
 
-      const camDir = new THREE.Vector3();
+      const camDir = this._vCamDir;
       this.camera.getWorldDirection(camDir);
 
       this.labels.forEach(label => {
@@ -824,8 +839,8 @@ import * as THREE from 'three';
           scale = 0.8;
         }
 
-        const labelWorldPos = label.getWorldPosition(new THREE.Vector3());
-        const dirToLabel = labelWorldPos.clone().sub(this.camera.position).normalize();
+        const labelWorldPos = label.getWorldPosition(this._vLabel);
+        const dirToLabel = this._vDir.copy(labelWorldPos).sub(this.camera.position).normalize();
         const facing = camDir.dot(dirToLabel);
         
         if (facing < 0.1) targetOpacity *= Math.max(0, (facing + 0.2) / 0.3);

@@ -1,4 +1,13 @@
 /* 卡牌配置：由需求清单 + 本地卡池 JSON 生成，勿手改；缺失介绍由管理者后台补充 */
+/* 神降计划·塔 · 卡池数据（由 tools/build_card_data.py 生成，请勿手改）
+ * 结构：{ version, generatedAt, trees: { player: [group...], contractor: [group...] }, meta }
+ *   group  : { type:"group", id, name, children:[pool|group] }
+ *   pool   : { type:"pool", id, name, period?, cards:[{ id, name, rarity, category, desc }] }
+ *   稀有度 : N / R / SR / SSR / SP（雪花之星、元宝·月眠留空表示「待定」）
+ *   meta   : { matched: 已匹配介绍数, missing: 暂无介绍数 }
+ * 约定：卡牌 id 为池内自增（c1..cN），业务键统一使用 poolId::cardId 复合键。
+ * 注意：x_affinity / x_item_limit / x_act_snow / x_act_yb 在两个角色树中复用同一池 id，
+ *       因此改名、新增、持有量天然同步；p_act_reverse / c_act_reverse 为各自独立卡表。 */
 window.SDJ_CARDS = {
  "version": 1,
  "generatedAt": "2026-10-27",
