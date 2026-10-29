@@ -27,7 +27,7 @@
   }
 
   // 全站缓存版本号：发布时同时改这里、map.js 的 ASSET_V、index.html 的 ?v=
-  const ASSET_V = "43";
+  const ASSET_V = "44";
   
   const routes = {
     "/login": renderLogin,

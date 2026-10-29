@@ -1,21 +1,21 @@
 ﻿/* 神降计划·塔 - 3D 地图引擎（Three.js） */
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 // 静态 import 必须写字面量：发布时与 app.js 的 ASSET_V、index.html 的 ?v= 同步递增
-import { SEED_LOCATIONS, AREA_LABELS } from './locations.js?v=43';
+import { SEED_LOCATIONS, AREA_LABELS } from "./locations.js?v=44";
 
-const MAP_STORE_KEY = 'sdj_map_data_v2';
+const MAP_STORE_KEY = "sdj_map_data_v2";
 
 // 统一的 HTML 转义（此前同一份实现散落在 addLabel / renderLocationMissions / showTemporaryMarker 三处）
-const escHtml = (s) => String(s == null ? '' : s)
-  .replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const escHtml = (s) => String(s == null ? "" : s)
+  .replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
   export class GlobeMapEngine {
     constructor(containerId, userRole) {
       this.container = document.getElementById(containerId);
       this.userRole = userRole;
-      this.isAdmin = userRole === 'admin';
+      this.isAdmin = userRole === "admin";
       this.isAddMode = false;
       this.isAnimating = false;
       this._destroyed = false;
@@ -37,9 +37,9 @@ const escHtml = (s) => String(s == null ? '' : s)
 
       this.labelRenderer = new CSS2DRenderer();
       this.labelRenderer.setSize(this.container.clientWidth, this.container.clientHeight);
-      this.labelRenderer.domElement.style.position = 'absolute';
-      this.labelRenderer.domElement.style.top = '0px';
-      this.labelRenderer.domElement.style.pointerEvents = 'none'; 
+      this.labelRenderer.domElement.style.position = "absolute";
+      this.labelRenderer.domElement.style.top = "0px";
+      this.labelRenderer.domElement.style.pointerEvents = "none"; 
       this.container.appendChild(this.labelRenderer.domElement);
 
       this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -174,7 +174,7 @@ const escHtml = (s) => String(s == null ? '' : s)
         const p = this.getPos(lat, lon, 1.02);
         pPos.push(p.x, p.y, p.z);
       }
-      pGeo.setAttribute('position', new THREE.Float32BufferAttribute(pPos, 3));
+      pGeo.setAttribute("position", new THREE.Float32BufferAttribute(pPos, 3));
       this.pMat = new THREE.PointsMaterial({ color: 0xff4444, size: 0.008, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending });
       this.particles = new THREE.Points(pGeo, this.pMat);
       this.globeGroup.add(this.particles);
@@ -234,8 +234,8 @@ const escHtml = (s) => String(s == null ? '' : s)
 
       this.labelsData.forEach(data => this.addLabel(data));
       
-      document.getElementById('infoClose').onclick = () => {
-        document.getElementById('infoPanel').classList.remove('show');
+      document.getElementById("infoClose").onclick = () => {
+        document.getElementById("infoPanel").classList.remove("show");
       };
 
       this.buildMissionMarkers();
@@ -278,10 +278,10 @@ const escHtml = (s) => String(s == null ? '' : s)
     // 统一的地点标签创建入口（初始数据与管理员新增共用）
     addLabel(data) {
       const esc = escHtml;
-      const div = document.createElement('div');
+      const div = document.createElement("div");
       div.className = `map-label label-l${data.level}`;
       div.innerHTML = `
-        <div class="label-text">${esc(data.name)}${data.district ? `<span class="label-district">${esc(data.district)}</span>` : ''}</div>
+        <div class="label-text">${esc(data.name)}${data.district ? `<span class="label-district">${esc(data.district)}</span>` : ""}</div>
         <div class="label-line"></div>
         <div class="label-dot"></div>
       `;
@@ -291,7 +291,7 @@ const escHtml = (s) => String(s == null ? '' : s)
       label.position.copy(this.getPos(data.lat, data.lon, 1.05));
       label.userData = data;
 
-      div.addEventListener('click', (e) => {
+      div.addEventListener("click", (e) => {
         e.stopPropagation();
         this.onLabelClick(label);
       });
@@ -303,21 +303,21 @@ const escHtml = (s) => String(s == null ? '' : s)
 
     onLabelClick(label) {
       const data = label.userData;
-      document.getElementById('infoTitle').textContent = data.name;
-      document.getElementById('infoDesc').textContent = data.desc || '暂无地点描述。';
-      const geo = document.getElementById('infoGeo');
+      document.getElementById("infoTitle").textContent = data.name;
+      document.getElementById("infoDesc").textContent = data.desc || "暂无地点描述。";
+      const geo = document.getElementById("infoGeo");
       if (geo) {
-        geo.textContent = `${data.district ? data.district + ' · ' : ''}L${data.level} · ${Number(data.lat).toFixed(2)}, ${Number(data.lon).toFixed(2)}`;
+        geo.textContent = `${data.district ? data.district + " · " : ""}L${data.level} · ${Number(data.lat).toFixed(2)}, ${Number(data.lon).toFixed(2)}`;
       }
-      document.getElementById('infoPanel').classList.add('show');
+      document.getElementById("infoPanel").classList.add("show");
       this._activeLoc = data;
       this.renderLocationMissions(data);
 
       // 旧的「一键接取」按钮不再使用：同一点位允许存在多个委托，统一在任务列表里逐条操作
-      const acceptBtn = document.getElementById('btnAcceptTask');
+      const acceptBtn = document.getElementById("btnAcceptTask");
       if (acceptBtn) { acceptBtn.hidden = true; acceptBtn.onclick = null; }
 
-      document.getElementById('btnTrack').onclick = () => {
+      document.getElementById("btnTrack").onclick = () => {
         this.flyToTarget(label);
       };
     }
@@ -325,81 +325,81 @@ const escHtml = (s) => String(s == null ? '' : s)
     /* ---------- 地点 ↔ 真实委托列表（支持一个地点多条委托） ---------- */
     missionsAt(loc) {
       if (!loc) return [];
-      const name = String(loc.name || '').trim();
+      const name = String(loc.name || "").trim();
       return this.getMissions().filter(m => {
         if (m.locationId) return m.locationId === loc.id;
-        return String(m.loc || '').trim() === name;
+        return String(m.loc || "").trim() === name;
       });
     }
 
     missionStatusText(m) {
       const left = m.deadline && m.deadline.endsAt ? m.deadline.endsAt - Date.now() : null;
-      if (left !== null && left <= 0 && m.status !== 'done') return '已截止';
+      if (left !== null && left <= 0 && m.status !== "done") return "已截止";
       return ({
-        available: '可接取', active: '进行中', review: '待审批',
-        done: '已完成', failed: '已失败', expired: '已截止'
-      })[m.status] || m.status || '未知';
+        available: "可接取", active: "进行中", review: "待审批",
+        done: "已完成", failed: "已失败", expired: "已截止"
+      })[m.status] || m.status || "未知";
     }
 
     missionRewardText(m) {
       const r = m && m.reward;
-      if (!r) return '未设定';
-      if (typeof r === 'string') return r;
-      if (r.type === 'item') return (r.itemName || '道具') + (r.rarity ? '（' + r.rarity + '）' : '');
-      return '计划点 ×' + (Number(r.points) || 0);
+      if (!r) return "未设定";
+      if (typeof r === "string") return r;
+      if (r.type === "item") return (r.itemName || "道具") + (r.rarity ? "（" + r.rarity + "）" : "");
+      return "计划点 ×" + (Number(r.points) || 0);
     }
 
     missionDeadlineText(m) {
       const dl = m && m.deadline;
-      if (!dl || !dl.endsAt) return '长期有效';
+      if (!dl || !dl.endsAt) return "长期有效";
       const d = new Date(dl.endsAt);
-      if (!Number.isFinite(d.getTime())) return '长期有效';
-      const p = n => String(n).padStart(2, '0');
+      if (!Number.isFinite(d.getTime())) return "长期有效";
+      const p = n => String(n).padStart(2, "0");
       return `截止 ${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
     }
 
     renderLocationMissions(loc) {
-      const box = document.getElementById('infoTaskDesc');
+      const box = document.getElementById("infoTaskDesc");
       if (!box) return;
       this._activeLoc = loc;
-      const isAdmin = this.userRole === 'admin';
+      const isAdmin = this.userRole === "admin";
       const esc = escHtml;
       const palette = this.missionPalette();
-      const sess = (window.SDJSession && typeof window.SDJSession.current === 'function')
+      const sess = (window.SDJSession && typeof window.SDJSession.current === "function")
         ? window.SDJSession.current() : null;
-      const me = sess ? (sess.username || sess.displayName) : '';
+      const me = sess ? (sess.username || sess.displayName) : "";
 
       const list = this.missionsAt(loc);
       const newBtn = isAdmin
-        ? `<button class="map-mission-new" data-map-new>＋ 在此地点新增委托</button>` : '';
+        ? `<button class="map-mission-new" data-map-new>＋ 在此地点新增委托</button>` : "";
 
       if (!list.length) {
         box.innerHTML = `<div class="map-mission-empty">${isAdmin
-          ? '该地点暂时没有委托，点下方按钮即可在这里发布。'
-          : '等待管理者发布委托。'}</div>${newBtn}`;
+          ? "该地点暂时没有委托，点下方按钮即可在这里发布。"
+          : "等待管理者发布委托。"}</div>${newBtn}`;
         this.bindMissionActions(box);
         return;
       }
 
       box.innerHTML = `<div class="map-mission-list">${list.map(m => {
-        const meta = palette[m.level] || { color: '#ddd', label: m.level };
+        const meta = palette[m.level] || { color: "#ddd", label: m.level };
         const acc = (m.acceptors || []).filter(a => a && a.username);
         const full = acc.length >= (m.slots || 1);
         const accepted = acc.some(a => a.username === me);
         const expired = m.deadline && m.deadline.endsAt && Date.now() > m.deadline.endsAt;
-        let ops = '';
+        let ops = "";
         if (isAdmin) {
           const locked = acc.length > 0;
           ops = `<button class="mm-btn ghost" data-map-view="${esc(m.id)}">查看</button>` +
-            (locked ? '' : `<button class="mm-btn" data-map-edit="${esc(m.id)}">编辑</button>`);
+            (locked ? "" : `<button class="mm-btn" data-map-edit="${esc(m.id)}">编辑</button>`);
         } else {
           if (accepted) ops = `<span class="mm-note">已接取</span>`;
-          else if (m.status === 'available' && !full && !expired) {
+          else if (m.status === "available" && !full && !expired) {
             ops = `<button class="mm-btn" data-map-accept="${esc(m.id)}">接取</button>`;
           } else if (full) ops = `<span class="mm-note">名额已满</span>`;
           else ops = `<span class="mm-note">${esc(this.missionStatusText(m))}</span>`;
         }
-        return `<div class="map-mission status-${esc(m.status || 'available')}">
+        return `<div class="map-mission status-${esc(m.status || "available")}">
           <div class="mm-head">
             <span class="mm-level" style="color:${meta.color};border-color:${meta.color}">${esc(m.level)}</span>
             <span class="mm-title">${esc(m.title)}</span>
@@ -408,36 +408,36 @@ const escHtml = (s) => String(s == null ? '' : s)
           <div class="mm-meta">奖励 ${esc(this.missionRewardText(m))} · 名额 ${acc.length}/${m.slots || 1} · ${esc(this.missionDeadlineText(m))}</div>
           <div class="mm-ops">${ops}</div>
         </div>`;
-      }).join('')}</div>${newBtn}`;
+      }).join("")}</div>${newBtn}`;
       this.bindMissionActions(box);
     }
 
     bindMissionActions(box) {
-      box.querySelectorAll('[data-map-accept]').forEach(btn => {
+      box.querySelectorAll("[data-map-accept]").forEach(btn => {
         btn.onclick = () => {
-          if (window.SDJMapActions && typeof window.SDJMapActions.accept === 'function') {
+          if (window.SDJMapActions && typeof window.SDJMapActions.accept === "function") {
             window.SDJMapActions.accept(btn.dataset.mapAccept, btn);
           }
         };
       });
-      box.querySelectorAll('[data-map-edit]').forEach(btn => {
+      box.querySelectorAll("[data-map-edit]").forEach(btn => {
         btn.onclick = () => {
-          if (window.SDJMapActions && typeof window.SDJMapActions.edit === 'function') {
+          if (window.SDJMapActions && typeof window.SDJMapActions.edit === "function") {
             window.SDJMapActions.edit(btn.dataset.mapEdit);
           }
         };
       });
-      box.querySelectorAll('[data-map-view]').forEach(btn => {
+      box.querySelectorAll("[data-map-view]").forEach(btn => {
         btn.onclick = () => {
-          if (window.SDJMapActions && typeof window.SDJMapActions.view === 'function') {
+          if (window.SDJMapActions && typeof window.SDJMapActions.view === "function") {
             window.SDJMapActions.view(btn.dataset.mapView);
           }
         };
       });
-      box.querySelectorAll('[data-map-new]').forEach(btn => {
+      box.querySelectorAll("[data-map-new]").forEach(btn => {
         btn.onclick = () => {
           const loc = this._activeLoc;
-          if (loc && window.SDJMapActions && typeof window.SDJMapActions.create === 'function') {
+          if (loc && window.SDJMapActions && typeof window.SDJMapActions.create === "function") {
             window.SDJMapActions.create(loc.id, loc.name);
           }
         };
@@ -452,16 +452,16 @@ const escHtml = (s) => String(s == null ? '' : s)
         this.labelGroup.remove(this._tempMarker);
         this._tempMarker = null;
       }
-      const div = document.createElement('div');
-      div.className = 'map-label label-l3 temp-marker';
+      const div = document.createElement("div");
+      div.className = "map-label label-l3 temp-marker";
       div.innerHTML = `
-        <div class="label-text">${esc(loc.name || '帖子标记')}<span class="label-district">帖子位置</span></div>
+        <div class="label-text">${esc(loc.name || "帖子标记")}<span class="label-district">帖子位置</span></div>
         <div class="label-line"></div>
         <div class="label-dot"></div>`;
       const label = new CSS2DObject(div);
       label.position.copy(this.getPos(Number(loc.lat), Number(loc.lon), 1.05));
-      label.userData = Object.assign({ level: 3, desc: '来自论坛帖子的位置标记。' }, loc);
-      div.addEventListener('click', (e) => { e.stopPropagation(); this.onLabelClick(label); });
+      label.userData = Object.assign({ level: 3, desc: "来自论坛帖子的位置标记。" }, loc);
+      div.addEventListener("click", (e) => { e.stopPropagation(); this.onLabelClick(label); });
       this.labelGroup.add(label);
       this._tempMarker = label;
       this.onLabelClick(label);
@@ -507,7 +507,7 @@ const escHtml = (s) => String(s == null ? '' : s)
     }
 
     bindEvents() {
-      this.controls.addEventListener('start', () => { 
+      this.controls.addEventListener("start", () => { 
         if (this.isAnimating) {
           this.isAnimating = false;
           this.controls.enabled = true;
@@ -517,32 +517,32 @@ const escHtml = (s) => String(s == null ? '' : s)
 
       let addBtn = null;
       if (this.isAdmin) {
-        const toolbar = document.getElementById('adminToolbar');
-        if (toolbar) toolbar.style.display = 'flex';
-        addBtn = document.getElementById('btnAddMode');
+        const toolbar = document.getElementById("adminToolbar");
+        if (toolbar) toolbar.style.display = "flex";
+        addBtn = document.getElementById("btnAddMode");
         
         const setIdle = () => {
           this.isAddMode = false;
           if (addBtn) {
-            addBtn.classList.remove('active');
+            addBtn.classList.remove("active");
             addBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg> 添加地点（点击球体）`;
           }
-          const hint = document.getElementById('mapHint');
+          const hint = document.getElementById("mapHint");
           if (hint) hint.textContent = "点击图钉查看详情 · 滚轮缩放 · 拖拽旋转";
         };
         this._resetAddMode = setIdle;
 
         // 页面结构缺失时不能直接 TypeError 打断整张地图（历史上踩过同类坑）
-        if (!addBtn) console.warn('[地图] 缺少 #btnAddMode，管理员工具条未启用');
+        if (!addBtn) console.warn("[地图] 缺少 #btnAddMode，管理员工具条未启用");
         if (addBtn) addBtn.onclick = () => {
           this.isAddMode = !this.isAddMode;
           if (this.isAddMode) {
-            addBtn.classList.add('active');
-            addBtn.innerHTML = '点击球体选择位置…';
-            const hint = document.getElementById('mapHint');
+            addBtn.classList.add("active");
+            addBtn.innerHTML = "点击球体选择位置…";
+            const hint = document.getElementById("mapHint");
             if (hint) {
               hint.textContent = "管理员模式：在地形上点击以创建新地点";
-              hint.classList.add('show');
+              hint.classList.add("show");
             }
           } else {
             setIdle();
@@ -550,7 +550,7 @@ const escHtml = (s) => String(s == null ? '' : s)
         };
       }
 
-      this.renderer.domElement.addEventListener('click', (e) => {
+      this.renderer.domElement.addEventListener("click", (e) => {
         if (!this.isAddMode) return;
         
         const rect = this.renderer.domElement.getBoundingClientRect();
@@ -569,7 +569,7 @@ const escHtml = (s) => String(s == null ? '' : s)
 
           // 交给管理面板去填表，引擎只负责提供坐标
           if (this._resetAddMode) this._resetAddMode();
-          document.dispatchEvent(new CustomEvent('sdj:map-pick', { detail: { lat, lon } }));
+          document.dispatchEvent(new CustomEvent("sdj:map-pick", { detail: { lat, lon } }));
         }
       });
 
@@ -582,7 +582,7 @@ const escHtml = (s) => String(s == null ? '' : s)
         this.renderer.setSize(w, h);
         this.labelRenderer.setSize(w, h);
       };
-      window.addEventListener('resize', this._onResize);
+      window.addEventListener("resize", this._onResize);
     }
 
     /* =========================================================
@@ -853,10 +853,10 @@ const escHtml = (s) => String(s == null ? '' : s)
         label.element.style.opacity = newOpacity;
         
         if (newOpacity < 0.05) {
-          label.element.style.pointerEvents = 'none';
+          label.element.style.pointerEvents = "none";
           label.element.style.zIndex = -1;
         } else {
-          label.element.style.pointerEvents = 'auto';
+          label.element.style.pointerEvents = "auto";
           label.element.style.zIndex = Math.floor(1000 + (level * 100) - (dist * 100));
         }
 
@@ -874,7 +874,7 @@ const escHtml = (s) => String(s == null ? '' : s)
       cancelAnimationFrame(this.animationId);
       clearTimeout(this._dockTimer);
       if (this._onControlsChange) {
-        this.controls.removeEventListener('change', this._onControlsChange);
+        this.controls.removeEventListener("change", this._onControlsChange);
         this._onControlsChange = null;
       }
       if (this.missionGroup) {
@@ -894,7 +894,7 @@ const escHtml = (s) => String(s == null ? '' : s)
       this.ripples = [];
       this.missionAnchors = [];
       if (this._onResize) {
-        window.removeEventListener('resize', this._onResize);
+        window.removeEventListener("resize", this._onResize);
         this._onResize = null;
       }
       this.controls.dispose();
