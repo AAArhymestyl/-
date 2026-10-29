@@ -110,12 +110,13 @@
 
   async function loadWorld() {
     if (!enabled()) return null;
-    try {
-      const c = await ensureClient();
-      const { data, error } = await c.from("world_state").select("*").eq("id", 1).maybeSingle();
-      if (error || !data) return null;
-      return data;
-    } catch (e) { return null; }
+    // 非管理员只拿到裁剪后的世界数据（本人钱包/通告/报告），不再直读整行
+    const r = await rpc("world_snapshot", {});
+    if (!r.ok) {
+      if (r.error) console.warn("[云端] 读取世界数据失败：", r.error);
+      return null;
+    }
+    return r;
   }
 
   async function saveWorld(patch) {
@@ -333,15 +334,15 @@
   }
 
   // 社交快照（好友 / 群聊 / 消息）：单行 world 级快照，便于跨设备同步
+  // 读取走 social_snapshot()：服务端按成员过滤后才返回，玩家不再直读整行
   async function loadSocialSnapshot() {
     if (!enabled()) return null;
-    try {
-      const c = await ensureClient();
-      const { data, error } = await c.from("social_state").select("*").eq("id", 1).maybeSingle();
-      if (error || !data) return null;
-      const raw = data.data;
-      return typeof raw === "string" ? safeParse(raw) : raw;
-    } catch (e) { return null; }
+    const r = await rpc("social_snapshot", {});
+    if (!r.ok) {
+      if (r.error) console.warn("[云端] 读取社交快照失败：", r.error);
+      return null;
+    }
+    return r;
   }
 
   // 服务端合并：消息按 id 取并集，避免两台设备各自整份覆盖对方的消息
@@ -566,6 +567,9 @@
   const addForumView = (postId) => rpc("forum_view_add", { p_post_id: postId });
   const banMember = (username, banned, note) =>
     rpc("member_ban", { p_username: username, p_banned: !!banned, p_note: note || "" });
+  const activityAppend = (id, username, scope, text, kind) =>
+    rpc("activity_append", { p_id: id, p_username: username, p_scope: scope, p_text: text, p_kind: kind });
+  const systemAlertMarkRead = () => rpc("system_alert_mark_read", {});
   const isOwner = () => !!(profile && profile.owner);
   const submitRegistration = (username, displayName, role) =>
     rpc("registration_submit", { p_username: username, p_display_name: displayName, p_role: role });
@@ -646,6 +650,8 @@
     friendRemove,
     npcFriendAdd,
     npcFriendRemove,
+    activityAppend,
+    systemAlertMarkRead,
     banMember,
     isOwner,
     submitRegistration,

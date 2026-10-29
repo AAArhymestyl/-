@@ -18,6 +18,16 @@
   const DEBUG_TOOLS = /[?&](debug|local)=1/.test(location.search)
     || /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)
     || location.protocol === "file:";
+
+  // 统一的本地 id 生成器：时间戳 + 进程内序号 + 随机后缀，避免同毫秒连续创建撞号
+  let uidSeq = 0;
+  function uid(prefix) {
+    uidSeq = (uidSeq + 1) % 1296;
+    return String(prefix || "") + Date.now().toString(36) + uidSeq.toString(36) + Math.random().toString(36).slice(2, 5);
+  }
+
+  // 全站缓存版本号：发布时同时改这里、map.js 的 ASSET_V、index.html 的 ?v=
+  const ASSET_V = "43";
   
   const routes = {
     "/login": renderLogin,
@@ -586,7 +596,7 @@
           mine.hash = hash;
         } else {
           const req = {
-            id: "r" + Date.now(), username: form.username, displayName: form.displayName,
+            id: uid("r"), username: form.username, displayName: form.displayName,
             role: normalRole, salt, hash, status: "pending", createdAt: Date.now(), note: ""
           };
           s.registrationRequests.unshift(req);
@@ -1344,7 +1354,7 @@
     const s = loadState();
     s.broadcasts = s.broadcasts || [];
     s.broadcasts.unshift({
-      id: "b" + Date.now(), text: t, at: Date.now(),
+      id: uid("b"), text: t, at: Date.now(),
       by: sess.displayName || "管理者", minutes: min,
       expiresAt: Date.now() + min * 60000
     });
@@ -1413,7 +1423,7 @@
         if (store && Array.isArray(store.items) && store.items.length) { apply(store.items); return; }
       }
     } catch (e) { /* 回退到内置地点 */ }
-    import("./locations.js?v=4").then(mod => apply(mod.SEED_LOCATIONS || [])).catch(() => apply([]));
+    import("./locations.js?v=" + ASSET_V).then(mod => apply(mod.SEED_LOCATIONS || [])).catch(() => apply([]));
   }
 
   function openActivityLog(username, isAdmin) {
@@ -1459,6 +1469,10 @@
       renderDashboardPage(container, displayName);
     };
     list.forEach(a => { a.read = true; });
+    if (window.SDJCloud && window.SDJCloud.enabled()) {
+      // 云端：已读状态写回服务端，避免刷新后红点重生
+      window.SDJCloud.systemAlertMarkRead().catch(() => {});
+    }
     saveState();
   }
 
@@ -1539,10 +1553,10 @@
       </div>`;
 
     const actionsHTML = isAdmin ? `
-      <button class="action-btn" data-action="0">发布全服广播<span>01 →</span></button>
-      <button class="action-btn" data-action="1">发布委托任务<span>02 →</span></button>
-      <button class="action-btn" data-action="2">成员权限管理<span>03 →</span></button>
-      <button class="action-btn" data-action="3">系统核心维护<span>04 →</span></button>
+      <button class="action-btn" data-action="broadcast">发布全服广播<span>01 →</span></button>
+      <button class="action-btn" data-action="mission">发布委托任务<span>02 →</span></button>
+      <button class="action-btn" data-action="member">成员权限管理<span>03 →</span></button>
+      <button class="action-btn" data-action="maintenance">系统核心维护<span>04 →</span></button>
       <button class="action-btn" data-profile>个人资料档案<span>05 →</span></button>`
       : `
       <button class="action-btn" data-goto="map">进入地图<span>01 →</span></button>
@@ -1594,8 +1608,10 @@
     const alertsCard = container.querySelector("[data-alerts]");
     if (alertsCard) alertsCard.onclick = () => openSystemAlerts(container, displayName);
     if (isAdmin) {
+      // 用语义名而不是按钮下标，按钮顺序调整后测试与埋点不会失效
+      const ADMIN_ACTION_IDS = { broadcast: 0, mission: 1, member: 2, maintenance: 3 };
       container.querySelectorAll("[data-action]").forEach(btn => {
-        btn.onclick = () => openAdminActionDialog(Number(btn.dataset.action));
+        btn.onclick = () => openAdminActionDialog(ADMIN_ACTION_IDS[btn.dataset.action]);
       });
     }
     container.querySelectorAll("[data-profile]").forEach(btn => {
@@ -1815,7 +1831,7 @@
     } catch (e) { /* 缓存损坏时回退到内置数据 */ }
     if (!items.length) {
       try {
-        const mod = await import("./locations.js?v=4");
+        const mod = await import("./locations.js?v=" + ASSET_V);
         items = mod.DEFAULT_MAP_ITEMS || [];
       } catch (e) { console.warn("[委托] 地点数据载入失败：", e); }
     }
@@ -1833,8 +1849,6 @@
       codex: appState.codex,
       bag: appState.bag,
       cards: appState.cards,
-      activity_log: appState.activityLog,
-      system_alerts: appState.systemAlerts,
       friends: appState.friends,
       settings: appState.settings
     };
@@ -1878,8 +1892,7 @@
       }
       await window.SDJCloud.saveWorld({
         registration_requests: list,
-        notifications: appState.notifications,
-        activity_log: appState.activityLog
+        notifications: appState.notifications
       });
       appState.registrationRequests = list;
       try { localStorage.setItem(STATE_KEY, JSON.stringify(appState)); } catch (e) {}
@@ -2071,7 +2084,7 @@
         if (item) Object.assign(item, { category: cat, rarity, name, intro, effect, scene, maker });
       } else {
         s.items.unshift({
-          id: "it" + Date.now(), category: cat, rarity, name, intro, effect, scene, maker, createdAt: Date.now()
+          id: uid("it"), category: cat, rarity, name, intro, effect, scene, maker, createdAt: Date.now()
         });
       }
       saveState();
@@ -2120,7 +2133,7 @@
         <span class="field-hint">0 / 600</span>
       </label>
       <div class="form-row-2">
-        <label class="modal-label">总可接取人数<input class="input-line" id="meSlots" type="number" min="1" max="99" value="${editing ? (editing.slots || 1) : 3}"></label>
+        <label class="modal-label">总可接取人数<input class="input-line" id="meSlots" type="number" min="1" max="99" value="${editing ? slotCount(editing) : 3}"></label>
         <label class="modal-label">任务时限
           <select class="input-line" id="meDlMode">
             <option value="range" ${dl.mode === "range" ? "selected" : ""}>指定时间段</option>
@@ -2213,7 +2226,8 @@
       const locationId = sel.value;
       const locName = sel.selectedOptions[0] ? (sel.selectedOptions[0].dataset.name || "") : "";
       const desc = descEl.value.trim();
-      const slots = Math.max(1, Math.min(99, Number($("#meSlots").value) || 1));
+      const rawSlots = Number($("#meSlots").value);
+      const slots = Number.isFinite(rawSlots) ? Math.max(1, Math.min(99, Math.floor(rawSlots))) : 1;
       const dlMode = $("#meDlMode").value;
       const deadline = buildDeadline(dlMode, {
         startHour: $("#meStart").value,
@@ -2241,7 +2255,7 @@
         const draft = editing
           ? Object.assign({}, editing, { title, level, locationId, loc: locName, desc, reward, slots, deadline })
           : {
-              id: "m" + Date.now(),
+              id: uid("m"),
               title, level, locationId, loc: locName, desc, reward, slots,
               acceptors: [], status: "available", deadline, createdAt: Date.now()
             };
@@ -2492,7 +2506,7 @@
     }
     try {
       // 经典脚本中 import() 以脚本自身地址为基准，故这里相对 js/app.js 解析
-      const { GlobeMapEngine } = await import("./map.js?v=7");
+      const { GlobeMapEngine } = await import("./map.js?v=" + ASSET_V);
       if (!host || !host.isConnected) return;
       globeEngine = new GlobeMapEngine("globe-container", userRole);
       // 暴露给调试与后续扩展（只读使用），也便于控制台验证委托绑定
@@ -2591,7 +2605,7 @@
           return;
         }
         const payload = {
-          id: editingId || "custom_" + Date.now(),
+          id: editingId || uid("custom_"),
           name,
           district: get("district") || "A区",
           level: Number(form.querySelector('[data-f="level"]').value),
@@ -2724,6 +2738,33 @@
     c.added = c.added || {};
     c.removed = c.removed || {};
     c.holdings = c.holdings || {};
+
+    // 卡牌 id 迁移（v2）：旧数据是池内自增 c1..cN，跨池重复；
+    // 新数据统一为 "<池id>-cN"，这里把历史键一次性重映射，保留持有量与编辑覆盖。
+    if (Number(c.idVersion) < 2) {
+      const remapKey = (k) => {
+        const raw = String(k);
+        const i = raw.indexOf("::");
+        if (i < 0) return raw;
+        const pool = raw.slice(0, i);
+        const cid = raw.slice(i + 2);
+        return pool + "::" + (cid.startsWith(pool + "-") ? cid : pool + "-" + cid);
+      };
+      const remapObj = (obj) => {
+        const out = {};
+        Object.keys(obj || {}).forEach(k => { out[remapKey(k)] = obj[k]; });
+        return out;
+      };
+      c.overrides = remapObj(c.overrides);
+      c.removed = remapObj(c.removed);
+      Object.keys(c.holdings || {}).forEach(u => { c.holdings[u] = remapObj(c.holdings[u]); });
+      Object.keys(c.added || {}).forEach(pid => {
+        (c.added[pid] || []).forEach(card => {
+          if (card && card.id && !String(card.id).startsWith(pid + "-")) card.id = pid + "-" + card.id;
+        });
+      });
+      c.idVersion = 2;
+    }
     const legacyIds = ["i1", "i2", "i3", "i4", "i5", "i6"];
     const legacyNames = ["断裂的契约匕首", "暗红信标", "守夜人徽记", "残缺的塔图", "止血绷带 ×3", "旧式黄铜钥匙"];
     s.bag = (s.bag || []).filter(it => !legacyIds.includes(it.id) && !legacyNames.includes(it.name));
@@ -2783,7 +2824,7 @@
     if (!username) return;
     loadState();
     appState.notifications.unshift({
-      id: "n" + Date.now() + Math.random().toString(16).slice(2, 6),
+      id: uid("n"),
       username: String(username),
       text,
       at: Date.now(),
@@ -2803,28 +2844,47 @@
   function pushActivity(username, text, kind) {
     if (!username) return;
     const s = loadState();
-    s.activityLog.unshift({
-      id: "al" + Date.now() + Math.random().toString(16).slice(2, 5),
+    const entry = {
+      id: uid("al"),
       username: String(username),
       scope: "self",
       kind: kind || "mission",
       text,
       at: Date.now()
-    });
+    };
+    s.activityLog.unshift(entry);
     if (s.activityLog.length > 300) s.activityLog.length = 300;
+    // 云端模式：服务端追加（其他设备 saveState 不再整列覆盖动态）
+    if (window.SDJCloud && window.SDJCloud.enabled()) {
+      window.SDJCloud.activityAppend(entry.id, entry.username, "self", entry.text, entry.kind)
+        .catch(err => console.warn("[云端] 动态写入失败：", err));
+    }
   }
 
   function pushSystemActivity(text, kind) {
     const s = loadState();
-    s.activityLog.unshift({
-      id: "al" + Date.now() + Math.random().toString(16).slice(2, 5),
+    const entry = {
+      id: uid("al"),
       username: "*",
       scope: "system",
       kind: kind || "system",
       text,
       at: Date.now()
-    });
+    };
+    s.activityLog.unshift(entry);
     if (s.activityLog.length > 300) s.activityLog.length = 300;
+    if (window.SDJCloud && window.SDJCloud.enabled()) {
+      window.SDJCloud.activityAppend(entry.id, "*", "system", entry.text, entry.kind)
+        .catch(err => console.warn("[云端] 系统动态写入失败：", err));
+    }
+  }
+
+  // 动态按 id 取并集：本地刚写入、尚未回读的条目不能被远端快照覆盖掉
+  function mergeActivityLists(local, remote) {
+    const byId = new Map();
+    (remote || []).forEach(e => { if (e && e.id) byId.set(String(e.id), e); });
+    (local || []).forEach(e => { if (e && e.id) byId.set(String(e.id), e); });
+    return Array.from(byId.values()).sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 300);
   }
 
   function recentActivities(username, isAdmin, limit) {
@@ -2862,7 +2922,7 @@
       } else {
         s.systemAlerts = s.systemAlerts || [];
         s.systemAlerts.unshift({
-          id: "sa" + Date.now(), kind: "register-bypass",
+          id: uid("sa"), kind: "register-bypass",
           text, count: rb.count, at: Date.now(), read: false
         });
         if (s.systemAlerts.length > 50) s.systemAlerts.length = 50;
@@ -2890,6 +2950,12 @@
   };
 
   function rarityClass(r) { return (RARITY_META[r] || RARITY_META.N).cls; }
+
+  // 名额下限为 1：显式处理 0 / NaN，避免 || 把合法 0 与其他假值混为一谈
+  function slotCount(m) {
+    const n = Number(m && m.slots);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 1;
+  }
 
   function rewardText(m) {
     const r = m && m.reward;
@@ -3068,7 +3134,7 @@
     if (reward.type === "item") {
       const cat = s.items.find(i => i.id === reward.itemId);
       s.bag.push({
-        id: "rw" + Date.now() + Math.random().toString(16).slice(2, 5),
+        id: uid("rw"),
         owner: username,
         name: (cat && cat.name) || reward.itemName || "未知道具",
         type: (cat && cat.category === "affinity") ? "好感道具" : "普通道具",
@@ -3117,7 +3183,7 @@
       }
       return;
     }
-    m.status = (acc.length >= (m.slots || 1) || reports.length > 0) ? "active" : "available";
+    m.status = (acc.length >= slotCount(m) || reports.length > 0) ? "active" : "available";
   }
 
   function myWallet(username) {
@@ -3300,7 +3366,7 @@
   function startWorldCloudWatch() {
     if (!window.SDJCloud || !window.SDJCloud.enabled()) return;
     if (!worldCloudChannel) {
-      window.SDJCloud.watch("world_state", onWorldCloudChange).then(ch => { worldCloudChannel = ch; });
+      window.SDJCloud.watch("world_signal", onWorldCloudChange).then(ch => { worldCloudChannel = ch; });
     }
     // 兜底轮询：即使 WebSocket 被网络或长时间挂机掐断，也不会漏掉审批与委托变化
     if (!worldPollTimer) {
@@ -3334,7 +3400,7 @@
     });
     if (world.mission_reports) merged.missionReports = world.mission_reports;
     if (world.registration_requests) merged.registrationRequests = world.registration_requests;
-    if (world.activity_log) merged.activityLog = world.activity_log;
+    if (world.activity_log) merged.activityLog = mergeActivityLists(merged.activityLog, world.activity_log);
     if (world.system_alerts) merged.systemAlerts = world.system_alerts;
     if (world.wallets) merged.wallets = world.wallets;
     if (world.register_bypass) merged.registerBypass = world.register_bypass;
@@ -3442,7 +3508,7 @@
         || s.members.find(x => !x.username && x.name === a.displayName);
       if (!m) {
         s.members.push({
-          id: "a" + Date.now() + Math.random().toString(16).slice(2, 5),
+          id: uid("a"),
           username: a.username,
           name: a.displayName,
           role,
@@ -3480,7 +3546,7 @@
       m.lastSeen = "刚刚";
     } else {
       s.members.push({
-        id: "a" + Date.now(),
+        id: uid("a"),
         username,
         name: displayName,
         role: roleLabelOf(role),
@@ -3834,12 +3900,16 @@
           `<div class="card-empty">${cardPendingOnly ? "本池暂无待补充介绍的卡牌" : (isAdmin ? "该卡池暂无卡牌，点击「新增卡牌」开始配置" : "该卡池暂无卡牌")}</div>`}
       </div>`;
 
+    const searchIndex = new Map();
+    cards.forEach(c => searchIndex.set(String(c.id),
+      [c.name, c.rarity, c.category || "", c.desc || ""].join(" ").toLowerCase()));
     const search = panel.querySelector("#cardSearch");
     if (search) {
       search.oninput = () => {
         const q = search.value.trim().toLowerCase();
         panel.querySelectorAll("#cardList .card-row").forEach(row => {
-          row.style.display = !q || (row.dataset.search || "").includes(q) ? "" : "none";
+          const hay = searchIndex.get(String(row.dataset.card)) || "";
+          row.style.display = !q || hay.includes(q) ? "" : "none";
         });
       };
     }
@@ -3888,8 +3958,7 @@
 
   function cardRowHTML(pool, c, uname, isAdmin, role) {
     const desc = c.desc ? c.desc.replace(/\s+/g, " ").slice(0, 60) : "【此卡牌介绍暂无】";
-    const search = [c.name, c.rarity, c.category || "", (c.desc || "").slice(0, 200)].join(" ").toLowerCase();
-    return `<div class="card-row panel-cut" data-card="${escHTML(c.id)}" data-search="${escHTML(search)}">
+    return `<div class="card-row panel-cut" data-card="${escHTML(String(c.id))}">
       ${cardRarityChip(c.rarity)}
       <div class="card-main">
         <div class="card-name">${escHTML(c.name)}</div>
@@ -3959,7 +4028,7 @@
   /* ---------------- 管理者：卡牌编辑 / 新增 ---------------- */
   function openCardEditor(pool, card, container) {
     const isNew = !card;
-    const draft = card || { id: "u" + Date.now().toString(36), name: "", rarity: "N", category: "", desc: "" };
+    const draft = card || { id: pool.id + "-u" + Date.now().toString(36), name: "", rarity: "N", category: "", desc: "" };
     const key = cardKey(pool.id, draft.id);
     const accounts = cardAccounts();
     const overlay = el("div", { class: "modal-overlay" });
@@ -4183,7 +4252,7 @@
       <div class="detail-grid">
         <div><span>任务描述</span><p>${escHTML(m.desc)}</p></div>
         <div><span>奖励</span><p>${escHTML(rewardText(m))}</p></div>
-        <div><span>名额</span><p>${(m.acceptors || []).length} / ${m.slots || 1} 人</p></div>
+        <div><span>名额</span><p>${(m.acceptors || []).length} / ${slotCount(m)} 人</p></div>
         <div><span>时限</span><p>${escHTML(deadlineLabel(m.deadline))}${m.deadline && m.deadline.endsAt ? `（截止 ${new Date(m.deadline.endsAt).toLocaleString("zh-CN")}）` : ""}</p></div>
         <div><span>接取人</span><p>${(m.acceptors || []).length ? m.acceptors.map(a => `${escHTML(a.name)}（${roleLabelOf(a.role)}）`).join("、") : "暂无"}</p></div>
         <div><span>审批记录</span><p>${reports.length ? reports.map(r => `${escHTML(r.applicant ? r.applicant.name : "—")} · ${approvalStatusText(r.status)}`).join("<br>") : "暂无"}</p></div>
@@ -4238,7 +4307,7 @@
       );
       const shownRep = adminView ? rep : myRep;
       const accepted = acceptors.some(a => a.username === myName);
-      const full = acceptors.length >= (m.slots || 1);
+      const full = acceptors.length >= slotCount(m);
       const canSubmit = !adminView && accepted && !myRep && (m.status === "available" || m.status === "active" || m.status === "review");
       return `
         <div class="mission-card panel-cut status-${m.status}">
@@ -4253,7 +4322,7 @@
             </div>
             <div class="mission-desc">${escHTML(m.desc)}</div>
             <div class="mission-meta">
-              地点：${escHTML(m.loc)} · 奖励：${escHTML(rewardText(m))} · 名额：${acceptors.length} / ${m.slots || 1}
+              地点：${escHTML(m.loc)} · 奖励：${escHTML(rewardText(m))} · 名额：${acceptors.length} / ${slotCount(m)}
               · 时限：${escHTML(deadlineLabel(m.deadline))}
             </div>
             ${(m.status === "done" || m.status === "failed")
@@ -4349,7 +4418,7 @@
         if (m.status !== "available") { toast("该委托当前不可接取"); return; }
         if (m.deadline && m.deadline.endsAt && Date.now() > m.deadline.endsAt) { toast("该委托已超过时限"); return; }
         m.acceptors = m.acceptors || [];
-        if (m.acceptors.length >= (m.slots || 1)) { toast("名额已满"); return; }
+        if (m.acceptors.length >= slotCount(m)) { toast("名额已满"); return; }
         if (m.acceptors.some(a => a.username === myName)) { toast("你已接取该委托"); return; }
         if (window.SDJCloud && window.SDJCloud.enabled()) {
           btn.disabled = true;
@@ -4360,7 +4429,7 @@
           const host = document.getElementById("mainContent");
           missionTab = "active";
           if (host) renderMissionPage(host, false);
-          toast(`已接取委托：${m.title}（${r.count || 0}/${r.slots || m.slots || 1}${r.status === "active" ? " · 已满员" : " · 仍可接取"}）`);
+          toast(`已接取委托：${m.title}（${r.count || 0}/${r.slots || slotCount(m)}${r.status === "active" ? " · 已满员" : " · 仍可接取"}）`);
           return;
         }
         m.acceptors.push({
@@ -4370,14 +4439,14 @@
           at: Date.now()
         });
         // 未满员保持 available，其他成员仍可接取；满员后自动转为进行中
-        const fullNow = m.acceptors.length >= (m.slots || 1);
+        const fullNow = m.acceptors.length >= slotCount(m);
         if (fullNow) m.status = "active";
         pushActivity(myName, `接取委托「${m.title}」（${m.level} 级 · ${m.loc}）`, "mission");
         saveState();
         const host = document.getElementById("mainContent");
         missionTab = "active";
         if (host) renderMissionPage(host, false);
-        toast(`已接取委托：${m.title}（${m.acceptors.length}/${m.slots || 1}${fullNow ? " · 已满员" : " · 仍可接取"}）`);
+        toast(`已接取委托：${m.title}（${m.acceptors.length}/${slotCount(m)}${fullNow ? " · 已满员" : " · 仍可接取"}）`);
       };
     });
 
@@ -4411,7 +4480,7 @@
             return true;
           }
           s2.missionReports.unshift({
-            id: "mr" + Date.now(),
+            id: uid("mr"),
             missionId: m.id,
             missionTitle: m.title,
             level: m.level,
@@ -5232,7 +5301,7 @@
           }
         } else {
           cur.comments.push({
-            id: "c" + Date.now(),
+            id: uid("c"),
             author: session.displayName,
             authorRole: session.role,
             text,
@@ -5449,7 +5518,7 @@
       btn.disabled = true;
       try {
         const post = {
-          id: "f" + Date.now(),
+          id: uid("f"),
           author: session.displayName,
           authorUsername: session.username || "",
           authorRole: session.role,
@@ -5828,7 +5897,7 @@
 
   function startSocialCloudWatch() {
     if (!window.SDJCloud || !window.SDJCloud.enabled() || socialCloudChannel) return;
-    window.SDJCloud.watch("social_state", async () => {
+    window.SDJCloud.watch("social_signal", async () => {
       const before = socialUiFingerprint();
       const changed = await pullSocialCloud();
       if (!changed) return;
@@ -6026,7 +6095,7 @@
     const recent = s.friendRequests.filter(r => r.from === from && r.to === to && Date.now() - r.createdAt < 86400000).length;
     if (recent >= 3) return { ok: false, error: "申请过于频繁，请明天再试" };
     const req = {
-      id: "fr" + Date.now().toString(36) + Math.random().toString(16).slice(2, 6),
+      id: uid("fr"),
       from, to,
       message: String(message || "").slice(0, 50),
       status: "pending",
@@ -6079,7 +6148,7 @@
     if (!n) return { ok: false, error: "分组名称不能为空" };
     const s = loadSocial();
     if (s.friendTags.some(t => t.name === n)) return { ok: false, error: "已存在同名分组" };
-    const tag = { id: "t" + Date.now().toString(36), name: n.slice(0, 12) };
+    const tag = { id: uid("t"), name: n.slice(0, 12) };
     s.friendTags.push(tag);
     saveSocial();
     return { ok: true, tag };
@@ -6155,7 +6224,7 @@
     }
     const s = loadSocial();
     const g = {
-      id: "g" + Date.now().toString(36) + Math.random().toString(16).slice(2, 5),
+      id: uid("g"),
       no: allocGroupNo(),
       name: (name || (nameOf(owner) + "的群聊")).slice(0, 20),
       intro: "",
@@ -6172,7 +6241,7 @@
     s.groups.unshift(g);
     list.forEach(u => {
       const req = {
-        id: "gr" + Date.now().toString(36) + Math.random().toString(16).slice(2, 6),
+        id: uid("gr"),
         groupId: g.id, from: owner, to: u, type: "invite",
         message: "", status: "pending", createdAt: Date.now()
       };
@@ -6231,7 +6300,7 @@
       const dup = s.groupRequests.find(r => r.groupId === gid && r.from === byUser && r.to === u && r.type === "invite" && r.status === "pending");
       if (dup) return;
       const req = {
-        id: "gr" + Date.now().toString(36) + Math.random().toString(16).slice(2, 6),
+        id: uid("gr"),
         groupId: gid, from: byUser, to: u, type: "invite",
         message: "", status: "pending", createdAt: Date.now()
       };
@@ -6267,7 +6336,7 @@
       return { ok: true, direct: true };
     }
     const req = {
-      id: "gr" + Date.now().toString(36) + Math.random().toString(16).slice(2, 6),
+      id: uid("gr"),
       groupId: gid, from: user, to: g.owner, type: "apply",
       message: String(message || "").slice(0, 50), status: "pending", createdAt: Date.now()
     };
@@ -6477,7 +6546,7 @@
 
   function pushSystemMsg(convId, text) {
     pushMsg(convId, {
-      id: "m" + Date.now().toString(36) + Math.random().toString(16).slice(2, 5),
+      id: uid("m"),
       from: "system", text, at: Date.now(), type: "system"
     });
   }
@@ -6487,7 +6556,7 @@
     if (!t) return { ok: false, error: "消息不能为空" };
     if (t.length > MSG_MAX_LEN) return { ok: false, error: "单条消息最多 " + MSG_MAX_LEN + " 字" };
     pushMsg(convId, {
-      id: "m" + Date.now().toString(36) + Math.random().toString(16).slice(2, 5),
+      id: uid("m"),
       from, text: t, at: Date.now(), type: "text"
     });
     touchPresence(from);
@@ -8570,7 +8639,7 @@
     if (m.status !== "available") { toast("该委托当前不可接取"); return; }
     if (m.deadline && m.deadline.endsAt && Date.now() > m.deadline.endsAt) { toast("该委托已超过时限"); return; }
     m.acceptors = m.acceptors || [];
-    if (m.acceptors.length >= (m.slots || 1)) { toast("该委托名额已满"); return; }
+    if (m.acceptors.length >= slotCount(m)) { toast("该委托名额已满"); return; }
     const username = sess.username || sess.displayName;
     if (m.acceptors.some(a => a.username === username)) { toast("你已接取该委托"); return; }
 
@@ -8583,15 +8652,15 @@
         return;
       }
       await syncWorldFromCloud(true);
-      toast(`已接取委托：${m.title}（${r.count || 0}/${r.slots || m.slots || 1}${r.status === "active" ? " · 已满员" : " · 仍可接取"}）`);
+      toast(`已接取委托：${m.title}（${r.count || 0}/${r.slots || slotCount(m)}${r.status === "active" ? " · 已满员" : " · 仍可接取"}）`);
     } else {
       m.acceptors.push({ username, name: sess.displayName, role: sess.role, at: Date.now() });
-      const fullNow = m.acceptors.length >= (m.slots || 1);
+      const fullNow = m.acceptors.length >= slotCount(m);
       if (fullNow) m.status = "active";
       m.progress = 0;
       pushActivity(username, `接取委托「${m.title}」（${m.level} 级 · ${m.loc}）`, "mission");
       saveState();
-      toast(`已接取委托：${m.title}（${m.acceptors.length}/${m.slots || 1}${fullNow ? " · 已满员" : " · 仍可接取"}）`);
+      toast(`已接取委托：${m.title}（${m.acceptors.length}/${slotCount(m)}${fullNow ? " · 已满员" : " · 仍可接取"}）`);
     }
     if (globeEngine && typeof globeEngine.refreshMissions === "function") globeEngine.refreshMissions();
     const host = document.getElementById("mainContent");
@@ -8605,7 +8674,7 @@
     const m = (loadState().missions || []).find(x =>
       x.status === "available" &&
       (x.loc === locName || (taskTitle || "").includes(x.title)) &&
-      (x.acceptors || []).length < (x.slots || 1) &&
+      (x.acceptors || []).length < slotCount(x) &&
       !(x.acceptors || []).some(a => a.username === (sess.username || sess.displayName))
     );
     if (!m) {
