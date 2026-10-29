@@ -527,17 +527,78 @@
     report("S2 输入一个字后不弹回默认界面",
       !!cur && cur.value === "沙" && win.SDJSocial.view().query === "沙" && win.SDJSocial.view().view === "search",
       (cur ? cur.value : "missing") + "/" + win.SDJSocial.view().view);
-    report("S3 搜索结果实时出现沙利叶",
+    report("S2b 输入过程中不触发整页重建（输入法不被截断）",
+      doc.querySelector("#socialQueryInput") === cur,
+      cur ? "same-node" : "missing");
+    // 点击「查找」后才显示结果
+    const go = doc.querySelector('[data-sact="run-search"]');
+    if (go) go.click();
+    await sleep(300);
+    report("S3 点击查找后出现沙利叶",
       Array.from(doc.querySelectorAll(".person-row")).some(row => row.textContent.indexOf("沙利叶") >= 0),
       doc.querySelectorAll(".person-row").length);
-
+    // 关键字片段搜索
+    const inp2 = doc.querySelector("#socialQueryInput");
+    inp2.value = "沙利";
+    inp2.dispatchEvent(new win.Event("input", { bubbles: true }));
+    doc.querySelector('[data-sact="run-search"]').click();
+    await sleep(250);
+    report("S3b 关键字片段「沙利」同样能命中",
+      Array.from(doc.querySelectorAll(".person-row")).some(row => row.textContent.indexOf("沙利叶") >= 0),
+      doc.querySelectorAll(".person-row").length);
+    cur = doc.querySelector("#socialQueryInput");
     cur.focus();
     win.SDJSocial.refresh();
     await sleep(250);
     const again = doc.querySelector("#socialQueryInput");
     report("S4 外部刷新后保留搜索词与输入焦点",
-      !!again && again.value === "沙" && doc.activeElement === again,
+      !!again && again.value === "沙利" && doc.activeElement === again,
       (again ? again.value : "missing") + "/" + (doc.activeElement ? doc.activeElement.id : "none"));
+
+    // 查看资料：弹层必须真正可见（此前缺 show 类导致 opacity:0）
+    const infoBtn = doc.querySelector('.person-row [data-sact="open-user"]');
+    report("S5 搜索结果含查看资料入口", !!infoBtn, !!infoBtn);
+    if (infoBtn) {
+      infoBtn.click();
+      await sleep(350);
+      const overlay = doc.querySelector(".modal-overlay.social-overlay");
+      const panel = overlay && overlay.querySelector(".social-modal");
+      const opacity = overlay ? win.getComputedStyle(overlay).opacity : "0";
+      report("S6 点击查看资料后弹层真实可见",
+        !!panel && panel.textContent.indexOf("个人资料档案") >= 0 && Number(opacity) > 0.5,
+        "opacity=" + opacity);
+      if (overlay) overlay.remove();
+    }
+    report("S7 搜索结果含申请添加好友按钮",
+      !!doc.querySelector('.person-row [data-sact="add-friend"]'),
+      doc.querySelectorAll('.person-row [data-sact="add-friend"]').length);
+  }
+
+  async function phaseProfile() {
+    heading("阶段七 · 个人资料档案");
+    const win = await bootApp("player");
+    const doc = win.document;
+    await sleep(400);
+    const entry = doc.querySelector("[data-profile]");
+    report("P1 主控台存在个人资料档案入口", !!entry, !!entry);
+    if (!entry) return;
+    entry.click();
+    await sleep(500);
+    const overlay = doc.querySelector(".modal-overlay.social-overlay");
+    const nameInput = doc.querySelector("#paName");
+    report("P2 资料弹层可见且含可编辑字段",
+      !!overlay && !!nameInput && Number(win.getComputedStyle(overlay).opacity) > 0.5 &&
+      !!doc.querySelector("#paGender") && !!doc.querySelector("#paAge") && !!doc.querySelector("#paSign"),
+      overlay ? win.getComputedStyle(overlay).opacity : "missing");
+    if (!nameInput) return;
+    nameInput.value = "测试改名";
+    doc.querySelector("#paSign").value = "来自回归测试的签名";
+    doc.querySelector("#paSave").click();
+    await sleep(500);
+    const sess = win.SDJSession.current() || {};
+    report("P3 保存后资料即时生效并写入会话",
+      sess.displayName === "测试改名",
+      sess.displayName || "none");
   }
 
   async function main() {
@@ -551,6 +612,7 @@
       await phase4();
       await phaseForum();
       await phaseSearch();
+      await phaseProfile();
     } catch (err) {
       report("测试执行异常", false, err && err.message ? err.message : String(err));
     } finally {
