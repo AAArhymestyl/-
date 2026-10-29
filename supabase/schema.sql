@@ -2663,3 +2663,24 @@ grant execute on function public.mission_delete(text) to authenticated;
 grant execute on function public.mission_submit(text, text) to authenticated;
 grant execute on function public.mission_review(text, text, text) to authenticated;
 grant execute on function public.world_sweep() to authenticated;
+
+-- =========================================================
+-- 20. 一次性数据修复：把被旧逻辑错误锁定的多人委托恢复为可接取
+--     旧版本在「有人提交/审批通过」后会把委托置为 review/active，
+--     导致名额未满时其他玩家无法继续接取。
+-- =========================================================
+update public.world_state w
+   set missions = (
+     select coalesce(jsonb_agg(
+       case
+         when (m->>'status') in ('review', 'active')
+          and jsonb_array_length(coalesce(m->'acceptors', '[]'::jsonb)) < coalesce((m->>'slots')::int, 1)
+           then m || '{"status":"available"}'::jsonb
+         else m
+       end
+     ), '[]'::jsonb)
+     from jsonb_array_elements(coalesce(w.missions, '[]'::jsonb)) m
+   ),
+   updated_at = now()
+ where w.id = 1
+   and coalesce(w.missions, '[]'::jsonb) <> '[]'::jsonb;
