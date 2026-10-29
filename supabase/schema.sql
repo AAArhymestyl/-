@@ -773,6 +773,13 @@ alter table public.profiles add column if not exists banned_at timestamptz;
 alter table public.profiles add column if not exists banned_by text;
 alter table public.profiles add column if not exists owner boolean not null default false;
 
+-- 12.0.1 个人资料档案（全体成员共享，最后一次保存的资料对所有人生效）
+alter table public.profiles add column if not exists gender text not null default '';
+alter table public.profiles add column if not exists age int;
+alter table public.profiles add column if not exists avatar_url text not null default '';
+alter table public.profiles add column if not exists sign text not null default '';
+alter table public.profiles add column if not exists updated_at timestamptz not null default now();
+
 update public.profiles set owner = true where role = 'admin' and username = 'AAArhymestyl';
 
 create or replace function public.is_owner()
@@ -1007,9 +1014,8 @@ begin
   );
   v_reports := jsonb_build_array(v_report) || v_reports;
 
-  select coalesce(jsonb_agg(case when m->>'id' = p_mission_id then m || '{"status":"review"}'::jsonb else m end), '[]'::jsonb)
-    into v_missions
-    from jsonb_array_elements(coalesce(v_world.missions, '[]'::jsonb)) m;
+  -- 单人独立结算：提交完成申请不改变委托状态，委托对其他接取人依旧开放
+  v_missions := coalesce(v_world.missions, '[]'::jsonb);
 
   select coalesce(jsonb_agg(jsonb_build_object(
     'id', 'n' || v_now || '_' || p.username,
@@ -1140,20 +1146,20 @@ begin
      where a->>'username' is not null;
 
     v_status := v_mission->>'status';
-    if v_status not in ('failed', 'expired', 'done') then
-      if v_pending > 0 then
-        v_status := 'review';
-      elsif v_all > 0 and v_approved >= v_all then
+    if v_status not in ('failed', 'expired') then
+      v_deadline := nullif(v_mission->'deadline'->>'endsAt', '')::bigint;
+      if v_deadline is not null and v_now > v_deadline then
+        -- 截止后：只要有任意一人完成结算就算完成，否则判定失败
+        if v_approved > 0 then v_status := 'done'; else v_status := 'failed'; end if;
+      elsif v_all >= coalesce((v_mission->>'slots')::int, 1) and v_approved >= v_all then
+        -- 名额已满且全部接取人都通过审批，委托整体完成
         v_status := 'done';
+      elsif v_all >= coalesce((v_mission->>'slots')::int, 1) then
+        -- 名额已满，仍有接取人未结算：保持进行中，不再接受新人
+        v_status := 'active';
       else
-        v_deadline := nullif(v_mission->'deadline'->>'endsAt', '')::bigint;
-        if v_deadline is not null and v_now > v_deadline then
-          if v_approved > 0 then v_status := 'done'; else v_status := 'failed'; end if;
-        elsif v_all >= coalesce((v_mission->>'slots')::int, 1) or v_approved > 0 then
-          v_status := 'active';
-        else
-          v_status := 'available';
-        end if;
+        -- 名额未满：保持可接取，单人完成不影响其他人接取
+        v_status := 'available';
       end if;
     end if;
 
@@ -1264,7 +1270,12 @@ begin
       elsif v_status = 'available' then
         select count(*) into v_acc from jsonb_array_elements(coalesce(m->'acceptors', '[]'::jsonb)) x
          where x->>'username' is not null;
-        if v_acc > 0 then
+        select count(*) into v_approved from jsonb_array_elements(v_reports) x
+         where x->>'missionId' = m->>'id' and x->>'status' = 'approved';
+        if v_approved > 0 then
+          -- 截止时至少有一人完成结算：委托按完成归档，已结算者保留奖励
+          v_new := m || jsonb_build_object('status', 'done', 'completedAt', coalesce(m->'completedAt', to_jsonb(v_now)));
+        elsif v_acc > 0 then
           v_new := m || jsonb_build_object('status', 'failed', 'failedAt', v_now);
           for a in select * from jsonb_array_elements(coalesce(m->'acceptors', '[]'::jsonb)) loop
             if a->>'username' is not null then
@@ -2603,6 +2614,34 @@ drop policy if exists "forum images delete" on storage.objects;
 create policy "forum images delete"
   on storage.objects for delete to authenticated
   using (bucket_id = 'forum-images' and ((storage.foldername(name))[1] = auth.uid()::text or public.is_admin()));
+
+-- 17.5 个人头像 Storage 桶与策略（每名成员只可写自己的目录）
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('avatars', 'avatars', true, 2097152,
+        array['image/png','image/jpeg','image/webp'])
+on conflict (id) do update
+  set public = excluded.public,
+      file_size_limit = excluded.file_size_limit,
+      allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "avatars read" on storage.objects;
+create policy "avatars read"
+  on storage.objects for select using (bucket_id = 'avatars');
+
+drop policy if exists "avatars upload" on storage.objects;
+create policy "avatars upload"
+  on storage.objects for insert to authenticated
+  with check (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "avatars update" on storage.objects;
+create policy "avatars update"
+  on storage.objects for update to authenticated
+  using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "avatars delete" on storage.objects;
+create policy "avatars delete"
+  on storage.objects for delete to authenticated
+  using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
 
 revoke all on function public.forum_view_add(uuid) from public;
 revoke all on function public.social_npc_friend_add(text) from public;
