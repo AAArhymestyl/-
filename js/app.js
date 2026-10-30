@@ -1,4 +1,4 @@
-﻿/* 神降计划·塔 - 应用主逻辑（路由 / 登录 / 注册 / 找回密码 / 主控台） */
+/* 神降计划·塔 - 应用主逻辑（路由 / 登录 / 注册 / 找回密码 / 主控台） */
 (function () {
   "use strict";
 
@@ -27,7 +27,7 @@
   }
 
   // 全站缓存版本号：发布时同时改这里、map.js 的 ASSET_V、index.html 的 ?v=
-  const ASSET_V = "45";
+  const ASSET_V = "46";
   
   const routes = {
     "/login": renderLogin,

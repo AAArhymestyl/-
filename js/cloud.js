@@ -14,6 +14,7 @@
   ];
 
   let client = null;
+  let clientPromise = null;
   let profile = null;
 
   // ?local=1 强制本地模式：回归测试台用它避免读写线上库
@@ -39,11 +40,23 @@
 
   async function ensureClient() {
     if (client) return client;
-    const mod = await loadSdk();
-    client = mod.createClient(URL_BASE, ANON_KEY, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
-    });
-    return client;
+    // 启动阶段 boot / 会话守护 / 页面渲染可能并发调用；不加锁会创建多个 GoTrueClient
+    // （控制台会报 Multiple GoTrueClient instances，登录态刷新时互相抢锁）
+    if (!clientPromise) {
+      clientPromise = (async () => {
+        const mod = await loadSdk();
+        client = mod.createClient(URL_BASE, ANON_KEY, {
+          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+        });
+        return client;
+      })();
+    }
+    try {
+      return await clientPromise;
+    } catch (e) {
+      clientPromise = null;
+      throw e;
+    }
   }
 
   async function getSession() {

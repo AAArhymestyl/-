@@ -1,9 +1,9 @@
-﻿/* 神降计划·塔 - 3D 地图引擎（Three.js） */
+/* 神降计划·塔 - 3D 地图引擎（Three.js） */
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 // 静态 import 必须写字面量：发布时与 app.js 的 ASSET_V、index.html 的 ?v= 同步递增
-import { SEED_LOCATIONS, AREA_LABELS } from "./locations.js?v=45";
+import { SEED_LOCATIONS, AREA_LABELS } from "./locations.js?v=46";
 
 const MAP_STORE_KEY = "sdj_map_data_v2";
 
