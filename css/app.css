@@ -201,15 +201,7 @@
   .action-btn span { font-size: 10px; color: var(--fg-mute); }
   .action-btn:hover span { color: var(--accent-bright); }
 
-  /* 全服广播 · 主控台横排滚动 */
-  .broadcast-marquee { display: flex; align-items: center; gap: 12px; padding: 9px 14px; background: rgba(232,17,35,0.08); border: 1px solid rgba(232,17,35,0.3); overflow: hidden; }
-  .bm-tag { flex: 0 0 auto; padding: 2px 9px; font-size: 10px; letter-spacing: 2px; color: #fff; background: var(--accent-deep); border: 1px solid var(--accent); }
-  .bm-viewport { flex: 1; overflow: hidden; position: relative; }
-  .bm-track { display: inline-flex; width: max-content; white-space: nowrap; animation: marqueeScroll 26s linear infinite; font-size: 12px; letter-spacing: 1px; color: #ffb3b3; }
-  .bm-track span { padding-right: 64px; }
-  .bm-viewport:hover .bm-track { animation-play-state: paused; }
-  @keyframes marqueeScroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
-
+  /* 全服广播已统一为顶部横板 .broadcast-strip，主控台不再有第二条滚动条 */
   .activity-more { margin-left: auto; background: none; border: 1px solid var(--line-soft); padding: 3px 9px; color: var(--fg-mute); font-family: var(--font-ui); font-size: 10px; letter-spacing: 1px; cursor: pointer; }
   .activity-more:hover { color: var(--accent-bright); border-color: var(--accent); }
   .timeline-empty { padding: 18px 4px; font-size: 11px; line-height: 1.8; color: var(--fg-mute); }
@@ -1186,8 +1178,9 @@
 
   @media (max-width: 860px) {
     .friend-layout { grid-template-columns: 1fr; }
-    .member-row { grid-template-columns: 1.2fr 0.8fr 0.8fr; }
-    .member-row span:nth-child(4), .member-row span:nth-child(5) { display: none; }
+    /* 只隐藏「最后活动」；操作列必须保留，否则手机上无法拉黑/删除 */
+    .member-row { grid-template-columns: 1.2fr 0.7fr 0.7fr auto; gap: 8px; }
+    .member-row span:nth-child(4) { display: none; }
     .module-head { flex-direction: column; align-items: flex-start; }
   }
 
@@ -1313,7 +1306,7 @@
 
 
 /* ---------- 全服广播（顶部横板 + 历史） ---------- */
-.broadcast-strip{display:flex;align-items:center;gap:12px;padding:10px 14px;margin-bottom:14px;border-radius:12px;
+.broadcast-strip{flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:10px 14px;margin-bottom:14px;border-radius:12px;
   background:linear-gradient(90deg,rgba(122,10,16,.55),rgba(40,0,0,.35));border:1px solid rgba(255,70,70,.35);
   box-shadow:0 0 18px rgba(120,0,0,.18);overflow:hidden}
 .broadcast-strip .bs-label{flex:0 0 auto;color:#ff6b6b;font-weight:700;letter-spacing:2px;font-size:13px;
@@ -1359,7 +1352,79 @@
 
 /* 减弱动效：系统开启「减少动态效果」时关闭无限动画与过渡 */
 @media (prefers-reduced-motion: reduce) {
-  .emblem, .broadcast-marquee, .broadcast-strip, .map-label, .toast { animation: none !important; transition: none !important; }
+  .emblem, .broadcast-strip, .map-label, .toast { animation: none !important; transition: none !important; }
   * { scroll-behavior: auto !important; }
 }
+
+/* =========================================================
+ * 移动端适配（v1.1）：
+ * 1) 通告下拉不再从按钮往左溢出屏幕，也不再被主内容盖住
+ * 2) 顶栏在窄屏收紧，避免挤压/换行
+ * 3) 主内容与各面板的间距、字号、表格改为可读的窄屏布局
+ * ========================================================= */
+@media (max-width: 768px) {
+  .content-container { padding: 14px; gap: 14px; }
+  .topbar { padding: 0 10px; }
+  .topbar-right { gap: 8px; font-size: 12px; }
+  .topbar-left { gap: 10px; }
+
+  /* 通告：锚定到顶栏宽度，两侧留 8px，永不出屏；层级高于主内容 */
+  .notify-dropdown {
+    position: fixed; left: 8px; right: 8px; width: auto;
+    top: calc(var(--topbar-h) + 6px); margin-top: 0;
+    max-height: 62vh; z-index: 9600;
+  }
+  .role-dropdown { right: 0; }
+
+  .module-title { font-size: 20px; letter-spacing: 2px; }
+  .module-en { letter-spacing: 3px; }
+  .welcome-banner { padding: 18px 16px; }
+  .welcome-text h1 { font-size: 22px; }
+
+  .card-grid, .card-grid.admin-grid { gap: 12px; }
+  .bottom-grid { gap: 14px; }
+
+  .member-table { padding: 4px 10px; }
+  .member-row { font-size: 12px; padding: 10px 0; }
+  .member-row.head { font-size: 9px; letter-spacing: 1px; }
+  .member-row .link-btn { padding: 2px 4px; font-size: 11px; }
+  .member-name { gap: 6px; }
+
+  .broadcast.panel-cut { flex-wrap: wrap; }
+  .broadcast .input-line { min-width: 0; flex: 1 1 100%; }
+  .broadcast select.input-line { max-width: none !important; flex: 1 1 60%; }
+  #broadcastSend { flex: 0 0 auto; }
+
+  .panel-title { font-size: 13px; letter-spacing: 2px; }
+
+  /* 地图：信息面板改成底部抽屉，给球体留出可操作区域 */
+  .map-info-panel { width: calc(100% - 24px); left: 12px; right: 12px; top: auto; bottom: 12px; height: 38vh; }
+  .mission-dock { width: 200px; bottom: 10px; right: 8px; }
+  .map-hint { bottom: 8px; font-size: 11px; letter-spacing: 1px; }
+
+  /* 表单弹窗在窄屏内边距收紧 */
+  .modal-panel { padding: 16px; }
+  .modal-panel .modal-actions { justify-content: stretch; }
+  .modal-panel .modal-actions .btn, .modal-panel .modal-actions .btn-sm { flex: 1 1 auto; }
+  .form-row-2 { grid-template-columns: 1fr; }
+
+  /* 聊天 / 论坛：输入区固定可点，避免被键盘遮住 */
+  .chat-input-row { position: sticky; bottom: 0; background: rgba(6,0,0,0.94); }
+  .forum-editor .editor-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 520px) {
+  /* 极窄屏：时钟让位给「通告 / 权限 / 断开」，避免顶栏挤压换行 */
+  .clock { display: none; }
+  .notify-btn, .fixed-role-badge, .btn-logout, .role-switch-btn { padding: 5px 8px; font-size: 11px; letter-spacing: 0; }
+  .content-container { padding: 10px; }
+  .welcome-text h1 { font-size: 19px; }
+  .card-title { font-size: 12px; }
+  .member-row { grid-template-columns: 1fr 0.6fr auto; }
+  .member-row span:nth-child(3) { display: none; }
+  .broadcast-strip { flex-wrap: wrap; gap: 6px; padding: 8px 10px; }
+  .broadcast-strip .bs-time { order: 3; font-size: 11px; }
+  .broadcast-strip .bs-history { order: 4; font-size: 11px; }
+}
+
 

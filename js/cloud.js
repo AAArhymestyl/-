@@ -21,8 +21,12 @@
   const enabled = () => !FORCE_LOCAL && !!(URL_BASE && ANON_KEY);
   const emailFor = (username) => `${String(username || "").toLowerCase()}@sdj.local`;
 
-  // 多 CDN 回退：部分网络下 jsDelivr 不可达时自动切换 esm.sh
+  // 优先使用本地内置 UMD（js/vendor/supabase.js）：国内移动网络常屏蔽 jsDelivr/esm.sh，
+  // 动态 import 失败会表现为「无法连接云端服务」；CDN 仅作为兜底。
   async function loadSdk() {
+    if (window.supabase && typeof window.supabase.createClient === "function") {
+      return window.supabase;
+    }
     let lastErr = null;
     for (const url of SDK_CDNS) {
       try { return await import(url); } catch (e) {
@@ -567,6 +571,8 @@
   const addForumView = (postId) => rpc("forum_view_add", { p_post_id: postId });
   const banMember = (username, banned, note) =>
     rpc("member_ban", { p_username: username, p_banned: !!banned, p_note: note || "" });
+  const deleteMember = (username) =>
+    rpc("member_delete", { p_username: username });
   const activityAppend = (id, username, scope, text, kind) =>
     rpc("activity_append", { p_id: id, p_username: username, p_scope: scope, p_text: text, p_kind: kind });
   const systemAlertMarkRead = () => rpc("system_alert_mark_read", {});
@@ -652,6 +658,7 @@
     npcFriendRemove,
     activityAppend,
     systemAlertMarkRead,
+    deleteMember,
     banMember,
     isOwner,
     submitRegistration,

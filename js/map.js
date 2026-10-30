@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 // 静态 import 必须写字面量：发布时与 app.js 的 ASSET_V、index.html 的 ?v= 同步递增
-import { SEED_LOCATIONS, AREA_LABELS } from "./locations.js?v=44";
+import { SEED_LOCATIONS, AREA_LABELS } from "./locations.js?v=45";
 
 const MAP_STORE_KEY = "sdj_map_data_v2";
 
@@ -44,13 +44,38 @@ const escHtml = (s) => String(s == null ? "" : s)
 
       this.controls = new OrbitControls(this.camera, this.renderer.domElement);
       this.controls.enableDamping = true;
-      this.controls.dampingFactor = 0.05;
+      this.controls.dampingFactor = 0.08;
       this.controls.enablePan = false;
       this.controls.minDistance = 1.1; 
       this.controls.maxDistance = 8.0;
       this.controls.target.set(0, 0, 0);
       this.controls.autoRotate = true;
       this.controls.autoRotateSpeed = 1.0;
+
+      // ---- 触摸端手感：捏合缩放降灵敏度 + 交互时暂停自转 ----
+      // 未配置时 OrbitControls 的 pinch 缩放过于灵敏，且自转会在缩放过程中持续改变视角，
+      // 表现为「一放大就偏移、地点标签漂移」。
+      const coarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+      this._isTouch = coarse || ("ontouchstart" in window);
+      this.controls.rotateSpeed = this._isTouch ? 0.55 : 1.0;
+      // 缩放速度对滚轮与捏合都生效：触摸端明显调低，桌面端轻微调低
+      this.controls.zoomSpeed = this._isTouch ? 0.42 : 0.8;
+      this.controls.autoRotateSpeed = this._isTouch ? 0.5 : 1.0;
+      // 浏览器默认手势（页面滚动/双指缩放）会和 OrbitControls 抢事件，必须禁用
+      this.renderer.domElement.style.touchAction = "none";
+
+      // 手指按下即停自转，松手 4 秒后恢复；避免缩放时视角还在被自转带走
+      this._autoRotateResume = null;
+      this.controls.addEventListener("start", () => {
+        this.controls.autoRotate = false;
+        clearTimeout(this._autoRotateResume);
+      });
+      this.controls.addEventListener("end", () => {
+        clearTimeout(this._autoRotateResume);
+        this._autoRotateResume = setTimeout(() => {
+          if (this.controls) this.controls.autoRotate = true;
+        }, 4000);
+      });
 
       this.labels = [];
       this.raycaster = new THREE.Raycaster();
@@ -896,6 +921,11 @@ const escHtml = (s) => String(s == null ? "" : s)
       if (this._onResize) {
         window.removeEventListener("resize", this._onResize);
         this._onResize = null;
+      }
+      // 离开地图时清掉自转恢复计时器，避免定时器持有已销毁的 controls
+      if (this._autoRotateResume) {
+        clearTimeout(this._autoRotateResume);
+        this._autoRotateResume = null;
       }
       this.controls.dispose();
       this.renderer.dispose();

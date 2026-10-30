@@ -27,7 +27,7 @@
   }
 
   // 全站缓存版本号：发布时同时改这里、map.js 的 ASSET_V、index.html 的 ?v=
-  const ASSET_V = "44";
+  const ASSET_V = "45";
   
   const routes = {
     "/login": renderLogin,
@@ -372,7 +372,7 @@
         if (res.profile.banned) {
           if (window.SDJCloud.signOut) window.SDJCloud.signOut();
           banner.hidden = false; banner.className = "banner";
-          banner.textContent = "该账号已被移出系统，无法登录。如有疑问请联系管理者。";
+          banner.textContent = "此账号已被拉黑，无法登录。如有疑问请联系管理者。";
           return;
         }
         const wantsAdmin = role === "admin";
@@ -1485,7 +1485,7 @@
     const isAdmin = viewRole === "admin";
     const roleTitle = isAdmin ? "管理者" : (viewRole === "contractor" ? "契约者" : "玩家");
     const tagline = isAdmin ? "隐秘系统运行中。" : (viewRole === "contractor" ? "塔在等待你的指令。" : "探索未知的隐秘世界。");
-    const broadcast = dashboardBroadcastText();
+    // 广播只保留顶部横板（renderBroadcastBanner），主控台不再重复一条滚动条
     const acts = recentActivities(username, isAdmin, 6);
     const wallet = myWallet(username);
     const missions = s.missions || [];
@@ -1566,10 +1566,6 @@
       <button class="action-btn" data-profile>个人资料档案<span>05 →</span></button>`;
 
     container.innerHTML = `
-      ${broadcast ? `<div class="broadcast-marquee">
-        <span class="bm-tag">全服广播</span>
-        <div class="bm-viewport"><div class="bm-track"><span>${escHTML(broadcast)}</span><span aria-hidden="true">${escHTML(broadcast)}</span></div></div>
-      </div>` : ""}
       <div class="welcome-banner panel-cut">
         <div class="welcome-text"><h1>${roleTitle}，${escHTML(displayName)}</h1><p id="dashClock">${escHTML(dateTimeText())}</p><p class="welcome-sub">${tagline}</p></div>
         <div class="tower-emblem"><img src="assets/tower.png" alt="塔"></div>
@@ -1618,6 +1614,8 @@
       btn.onclick = () => openProfileArchive();
     });
     if (isAdmin) refreshDashboardMembers(container);
+    // 主控台重绘会清空容器，广播横板必须跟着补回来（否则手动刷新后滚动条消失）
+    renderBroadcastBanner();
   }
 
   // 主控台「全组织活跃成员」：云端模式读服务端 profiles，本机模式回退本地账号表
@@ -8306,7 +8304,7 @@
             roleRaw: p.role,
             banned: !!p.banned,
             owner: !!p.owner,
-            status: p.banned ? "已移出" : "正常",
+            status: p.banned ? "已拉黑" : "正常",
             lastSeen: local.lastSeen || "—",
             current: !!currentKey && p.username === currentKey
           };
@@ -8341,13 +8339,16 @@
             <div class="member-row">
               <span class="member-name"><span class="avatar">${escHTML(String(m.name).slice(0, 1))}</span>${escHTML(m.name)}${m.current ? `<span class="role-chip">当前</span>` : ""}</span>
               <span>${escHTML(m.role)}</span>
-              <span class="${(m.status === "受限" || m.status === "已移出") ? "state-warn" : "state-ok"}">${escHTML(m.status)}</span>
+              <span class="${(m.status === "受限" || m.status === "已拉黑" || m.status === "已移出") ? "state-warn" : "state-ok"}">${escHTML(m.status)}</span>
               <span class="muted">${escHTML(m.lastSeen)}</span>
               <span>${m.current
                 ? `<span class="muted">—</span>`
                 : (window.SDJCloud && window.SDJCloud.enabled()
                     ? (canAct(m)
-                        ? `<button class="link-btn ${m.banned ? "" : "warn"}" data-ban="${escHTML(m.username)}" data-banned="${m.banned ? 1 : 0}">${m.banned ? "恢复访问" : "移出系统"}</button>`
+                        ? `${m.banned
+                            ? `<button class="link-btn" data-ban="${escHTML(m.username)}" data-banned="1">解除拉黑</button>`
+                            : `<button class="link-btn warn" data-ban="${escHTML(m.username)}" data-banned="0">拉黑</button>
+                               <button class="link-btn danger" data-del="${escHTML(m.username)}" data-name="${escHTML(m.name)}">删除</button>`}`
                         : `<span class="muted">—</span>`)
                     : `<button class="link-btn" data-restrict="${m.id}">${m.status === "受限" ? "解除限制" : "限制访问"}</button>`)}</span>
             </div>`).join("")}
@@ -8364,14 +8365,14 @@
       };
     });
 
-    // 云端模式：移出 / 恢复（真正落库，被移出者无法再登录）
+    // 云端模式：拉黑 / 解除拉黑（被拉黑者无法再登录）
     container.querySelectorAll("[data-ban]").forEach(btn => {
       btn.onclick = async () => {
         const username = btn.dataset.ban;
         const banned = btn.dataset.banned !== "1";
         const tip = banned
-          ? `确认将「${username}」移出系统？之后该账号无法登录。`
-          : `确认恢复「${username}」的访问权限？`;
+          ? `确认将「${username}」加入黑名单？之后该账号将无法登录。`
+          : `确认解除「${username}」的黑名单？`;
         if (!confirm(tip)) return;
         btn.disabled = true;
         const r = await window.SDJCloud.banMember(username, banned, "");
@@ -8379,7 +8380,29 @@
         if (!r.ok) { toast(r.error || "操作失败"); return; }
         await syncWorldFromCloud(true);
         renderMemberPage(container);
-        toast(banned ? `已移出系统：${username}` : `已恢复访问：${username}`);
+        toast(banned ? `已拉黑：${username}` : `已解除拉黑：${username}`);
+      };
+    });
+
+    // 云端模式：删除系统（清除该账号全部数据与权限，不可恢复）
+    container.querySelectorAll("[data-del]").forEach(btn => {
+      btn.onclick = async () => {
+        const username = btn.dataset.del;
+        const label = btn.dataset.name || username;
+        if (!confirm(`确认将「${label}」从系统彻底删除？\n该账号的档案、钱包、通告、好友与消息将一并清除，且无法恢复。`)) return;
+        const typed = prompt(`请输入用户名「${username}」以确认删除：`, "");
+        if (typed === null) return;
+        if (String(typed).trim().toLowerCase() !== String(username).toLowerCase()) {
+          toast("用户名不匹配，已取消删除");
+          return;
+        }
+        btn.disabled = true;
+        const r = await window.SDJCloud.deleteMember(username);
+        btn.disabled = false;
+        if (!r.ok) { toast(r.error || "删除失败"); return; }
+        await syncWorldFromCloud(true);
+        renderMemberPage(container);
+        toast(`已删除：${label}`);
       };
     });
     container.querySelector("#broadcastSend").onclick = async () => {
@@ -8758,7 +8781,7 @@
       if (p.banned) {
         clearSession();
         if (getPath() !== "/login") {
-          toast("该账号已被移出系统，无法继续使用");
+          toast("此账号已被拉黑，无法继续使用");
           setTimeout(() => navigate("/login"), 900);
         }
         return;
