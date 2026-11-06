@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 // 静态 import 必须写字面量：发布时与 app.js 的 ASSET_V、index.html 的 ?v= 同步递增
-import { SEED_LOCATIONS, AREA_LABELS } from "./locations.js?v=46";
+import { SEED_LOCATIONS, AREA_LABELS } from "./locations.js?v=47";
 
 const MAP_STORE_KEY = "sdj_map_data_v2";
 
@@ -165,17 +165,17 @@ const escHtml = (s) => String(s == null ? "" : s)
           uniform float uDarkness;
           varying float vElevation; varying vec3 vNormal;
           void main() {
-            vec3 cOcean = vec3(0.01, 0.02, 0.04);
-            vec3 cLand = vec3(0.15, 0.02, 0.02);
-            vec3 cPeak = vec3(0.8, 0.1, 0.1);
+            vec3 cOcean = vec3(0.012, 0.018, 0.020);
+            vec3 cLand = vec3(0.12, 0.10, 0.06);
+            vec3 cPeak = vec3(0.72, 0.58, 0.32);
             vec3 color;
-            if (vElevation < 0.55) color = mix(cOcean, vec3(0.02, 0.08, 0.12), vElevation / 0.55);
+            if (vElevation < 0.55) color = mix(cOcean, vec3(0.03, 0.09, 0.09), vElevation / 0.55);
             else color = mix(cLand, cPeak, (vElevation - 0.55) / 0.45);
             float diff = max(dot(normalize(vNormal), normalize(vec3(1.0, 1.0, 1.0))), 0.0);
             color *= (0.4 + 0.6 * diff);
             float contour = fract(vElevation * 30.0);
-            if (contour < 0.05 && vElevation > 0.55) color = vec3(0.8, 0.1, 0.1); 
-            if (abs(vElevation - 0.55) < 0.01) color = vec3(0.0, 0.8, 1.0); 
+            if (contour < 0.05 && vElevation > 0.55) color = vec3(0.78, 0.64, 0.36);
+            if (abs(vElevation - 0.55) < 0.01) color = vec3(0.28, 0.52, 0.46);
             color *= (1.0 - uDarkness);
             gl_FragColor = vec4(color, 1.0);
           }
@@ -200,7 +200,7 @@ const escHtml = (s) => String(s == null ? "" : s)
         pPos.push(p.x, p.y, p.z);
       }
       pGeo.setAttribute("position", new THREE.Float32BufferAttribute(pPos, 3));
-      this.pMat = new THREE.PointsMaterial({ color: 0xff4444, size: 0.008, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending });
+      this.pMat = new THREE.PointsMaterial({ color: 0xc8a357, size: 0.0065, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending });
       this.particles = new THREE.Points(pGeo, this.pMat);
       this.globeGroup.add(this.particles);
     }

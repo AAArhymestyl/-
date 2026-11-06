@@ -20,9 +20,9 @@ window.SDJ_CONFIG = {
 
   // 委托等级配色：地图标记、侧边栏、任务列表共用同一份定义
   missionLevels: {
-    A: { color: "#ff2b2b", label: "A 级 · 紧急", ripple: true },
-    B: { color: "#ff8a00", label: "B 级 · 高危", ripple: false },
-    C: { color: "#ffd166", label: "C 级 · 常规", ripple: false },
-    D: { color: "#7fd1ff", label: "D 级 · 低危", ripple: false }
+    A: { color: "#C8553A", label: "A 级 · 紧急", ripple: true },
+    B: { color: "#C8964E", label: "B 级 · 高危", ripple: false },
+    C: { color: "#7FA093", label: "C 级 · 常规", ripple: false },
+    D: { color: "#7E9CB0", label: "D 级 · 低危", ripple: false }
   }
 };

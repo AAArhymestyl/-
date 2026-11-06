@@ -27,7 +27,7 @@
   }
 
   // 全站缓存版本号：发布时同时改这里、map.js 的 ASSET_V、index.html 的 ?v=
-  const ASSET_V = "46";
+  const ASSET_V = "47";
   
   const routes = {
     "/login": renderLogin,
@@ -1913,7 +1913,7 @@
     panel.innerHTML = `
       <div class="modal-title">提交任务内容</div>
       <div class="modal-desc">${escHTML(m.title)} · ${escHTML(m.loc)} · 奖励 ${escHTML(rewardText(m))}</div>
-      <textarea id="submitContent" maxlength="800" style="width:100%;min-height:150px;margin-top:12px;padding:10px 12px;border-radius:10px;background:rgba(0,0,0,.35);color:#eee;border:1px solid rgba(255,255,255,.18);font-family:inherit;line-height:1.6;resize:vertical"
+      <textarea id="submitContent" maxlength="800" style="width:100%;min-height:150px;margin-top:12px;padding:12px 14px;border-radius:0;background:rgba(5,8,8,.62);color:#EDE7D7;border:1px solid rgba(200,163,87,.22);font-family:inherit;line-height:1.7;resize:vertical"
         placeholder="如已在群内完成委托，请直接输入已完成并提交，管理者会查阅之后在后台进行完成审批"></textarea>
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
         <button class="btn-sm ghost" id="submitCancel">取消</button>
@@ -2940,11 +2940,11 @@
 
   /* ---------------- 委托数据模型：奖励 / 时限 / 倒计时 / 迁移 ---------------- */
   const RARITY_META = {
-    N:  { label: "普通", cls: "普通", color: "#b9b9b9" },
-    R:  { label: "精良", cls: "精良", color: "#6fbf73" },
-    SR: { label: "稀有", cls: "稀有", color: "#5aa9ff" },
-    SSR:{ label: "传说", cls: "传说", color: "#c77dff" },
-    SP: { label: "神话", cls: "传说", color: "#ffb300" }
+    N:  { label: "普通", cls: "普通", color: "#A9A79B" },
+    R:  { label: "精良", cls: "精良", color: "#7FA093" },
+    SR: { label: "稀有", cls: "稀有", color: "#7E9CB0" },
+    SSR:{ label: "传说", cls: "传说", color: "#A48BBE" },
+    SP: { label: "神话", cls: "传说", color: "#D3B15E" }
   };
 
   function rarityClass(r) { return (RARITY_META[r] || RARITY_META.N).cls; }
@@ -4773,15 +4773,15 @@
     const emptyState = `
       <div class="forum-empty">
         <svg class="forum-empty-svg" viewBox="0 0 200 150" aria-hidden="true">
-          <rect x="52" y="28" width="96" height="112" rx="10" fill="#e8f0ff"/>
-          <rect x="66" y="46" width="68" height="8" rx="4" fill="#bcd0f0"/>
-          <rect x="66" y="64" width="68" height="8" rx="4" fill="#bcd0f0"/>
-          <rect x="66" y="82" width="44" height="8" rx="4" fill="#bcd0f0"/>
-          <rect x="56" y="104" width="88" height="28" rx="6" fill="#2f6bd8"/>
-          <circle cx="150" cy="44" r="20" fill="#c9f5c2"/>
-          <circle cx="150" cy="44" r="12" fill="#0f5132"/>
-          <circle cx="42" cy="92" r="20" fill="#c9f5c2"/>
-          <circle cx="42" cy="92" r="12" fill="#0f5132"/>
+          <rect x="52" y="28" width="96" height="112" rx="4" fill="#161C1B" stroke="#C8A357" stroke-opacity=".35"/>
+          <rect x="66" y="46" width="68" height="8" rx="2" fill="#3A4038"/>
+          <rect x="66" y="64" width="68" height="8" rx="2" fill="#3A4038"/>
+          <rect x="66" y="82" width="44" height="8" rx="2" fill="#3A4038"/>
+          <rect x="56" y="104" width="88" height="28" rx="2" fill="#8A6C2E"/>
+          <circle cx="150" cy="44" r="20" fill="#3A3426"/>
+          <circle cx="150" cy="44" r="12" fill="#C8A357"/>
+          <circle cx="42" cy="92" r="20" fill="#3A3426"/>
+          <circle cx="42" cy="92" r="12" fill="#C8A357"/>
         </svg>
         <div class="forum-empty-title">暂无更多内容，快来发帖吧</div>
         <div class="forum-empty-sub">期待你的分享</div>
@@ -6775,10 +6775,10 @@
   function buildEmpty(title, sub) {
     return `<div class="social-empty">
       <svg viewBox="0 0 120 120" class="social-empty-svg" aria-hidden="true">
-        <circle cx="60" cy="60" r="46" fill="none" stroke="rgba(232,17,35,.35)" stroke-width="1.5" stroke-dasharray="4 8"/>
-        <circle cx="60" cy="60" r="30" fill="none" stroke="rgba(232,17,35,.22)" stroke-width="1"/>
-        <path d="M60 26 L60 94 M26 60 L94 60" stroke="rgba(232,17,35,.25)" stroke-width="1"/>
-        <circle cx="60" cy="60" r="4" fill="#e81123"/>
+        <circle cx="60" cy="60" r="46" fill="none" stroke="rgba(200,163,87,.35)" stroke-width="1.5" stroke-dasharray="4 8"/>
+        <circle cx="60" cy="60" r="30" fill="none" stroke="rgba(200,163,87,.22)" stroke-width="1"/>
+        <path d="M60 26 L60 94 M26 60 L94 60" stroke="rgba(200,163,87,.25)" stroke-width="1"/>
+        <circle cx="60" cy="60" r="4" fill="#c8a357"/>
       </svg>
       <div class="social-empty-title">${escHTML(title)}</div>
       <div class="social-empty-sub">${escHTML(sub)}</div>
