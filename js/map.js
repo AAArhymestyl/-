@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 // 静态 import 必须写字面量：发布时与 app.js 的 ASSET_V、index.html 的 ?v= 同步递增
-import { SEED_LOCATIONS, AREA_LABELS } from "./locations.js?v=47";
+import { SEED_LOCATIONS, AREA_LABELS } from "./locations.js?v=48";
 
 const MAP_STORE_KEY = "sdj_map_data_v2";
 
@@ -261,6 +261,8 @@ const escHtml = (s) => String(s == null ? "" : s)
       
       document.getElementById("infoClose").onclick = () => {
         document.getElementById("infoPanel").classList.remove("show");
+        const hint = document.getElementById("mapHint");
+        if (hint) hint.classList.add("show");
       };
 
       this.buildMissionMarkers();
@@ -335,6 +337,8 @@ const escHtml = (s) => String(s == null ? "" : s)
         geo.textContent = `${data.district ? data.district + " · " : ""}L${data.level} · ${Number(data.lat).toFixed(2)}, ${Number(data.lon).toFixed(2)}`;
       }
       document.getElementById("infoPanel").classList.add("show");
+      const hint = document.getElementById("mapHint");
+      if (hint) hint.classList.remove("show");
       this._activeLoc = data;
       this.renderLocationMissions(data);
 

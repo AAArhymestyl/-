@@ -27,7 +27,7 @@
   }
 
   // 全站缓存版本号：发布时同时改这里、map.js 的 ASSET_V、index.html 的 ?v=
-  const ASSET_V = "47";
+  const ASSET_V = "48";
   
   const routes = {
     "/login": renderLogin,
@@ -1209,6 +1209,8 @@
 
     renderSidebar();
     renderContent();
+    // 云端：启动后补一次成员档案，让头像在论坛/好友/成员管理里都能立即解析
+    if (window.SDJCloud && window.SDJCloud.enabled()) ensureSocialProfiles(true);
     startWorldCloudWatch();
     startSocialCloudWatch();
     // 广播横板独立刷新：不依赖页面重绘，切换菜单/实时推送后都能稳定出现
@@ -1626,6 +1628,8 @@
     try { list = await window.SDJCloud.listProfiles(); }
     catch (e) { console.warn("[主控台] 成员统计读取失败：", e); return; }
     if (!list || !container.isConnected) return;
+    rememberProfileAvatars(list);
+    refreshVisibleAvatars(container);
     const live = list.filter(p => !p.banned && p.role !== "admin");
     const players = live.filter(p => p.role === "player").length;
     const contractors = live.filter(p => p.role === "contractor").length;
@@ -1783,6 +1787,13 @@
             setSession(sess);
           }
           box.remove();
+          const curSess = getSession() || {};
+          rememberProfileAvatars([{
+            username: curSess.username || curSess.displayName,
+            display_name: fields.display_name,
+            avatar_url: fields.avatar_url
+          }]);
+          refreshVisibleAvatars();
           toast("个人资料已保存，全体成员可见");
           emitSocial();
           const host = document.getElementById("mainContent");
@@ -4623,6 +4634,37 @@
     return "";
   }
 
+  // 论坛评论的跨端归一化：把云端的 role / at 字段转成前端使用的 authorRole / time，
+  // 并为旧回复补 parentId（旧数据默认回复主楼），供递归楼中楼使用。
+  function forumTimeText(ts) {
+    const ms = Number(ts) || 0;
+    if (!ms) return "刚刚";
+    const sec = (Date.now() - ms) / 1000;
+    if (sec < 60) return "刚刚";
+    if (sec < 3600) return Math.floor(sec / 60) + " 分钟前";
+    if (sec < 86400) return Math.floor(sec / 3600) + " 小时前";
+    if (sec < 172800) return "昨天";
+    return fmtTime(ms);
+  }
+
+  function normalizeForumComments(list) {
+    return (Array.isArray(list) ? list : []).map((c) => {
+      if (!c || typeof c !== "object") return null;
+      c.authorRole = c.authorRole || c.role || "";
+      if (c.time == null) c.time = forumTimeText(c.at);
+      c.username = c.username || "";
+      c.replies = (Array.isArray(c.replies) ? c.replies : []).map((r) => {
+        if (!r || typeof r !== "object") return null;
+        r.authorRole = r.authorRole || r.role || "";
+        if (r.time == null) r.time = forumTimeText(r.at);
+        r.username = r.username || "";
+        r.parentId = r.parentId || ""; // 旧版回复没有 parentId：视为直接回复主楼
+        return r;
+      }).filter(Boolean);
+      return c;
+    }).filter(Boolean);
+  }
+
   // 旧数据迁移 + 字段补全（section / views / comments / essence / createdAt）
   function normalizeForumData() {
     const s = loadState();
@@ -4632,6 +4674,7 @@
       if (!p.authorRole) { p.authorRole = FORUM_LEGACY_ROLES[p.id] || guessForumRole(p.author); changed = true; }
       if (p.views == null) { p.views = 0; changed = true; }
       if (!Array.isArray(p.comments)) { p.comments = []; changed = true; }
+      p.comments = normalizeForumComments(p.comments);
       if (!Array.isArray(p.images)) { p.images = []; changed = true; }
       if (!Array.isArray(p.viewedBy)) { p.viewedBy = []; changed = true; }
       if (p.location === undefined) { p.location = null; changed = true; }
@@ -4742,7 +4785,7 @@
       return `
         <article class="forum-post panel-cut" data-open="${escHTML(p.id)}">
           <div class="post-head">
-            <span class="avatar">${escHTML(String(p.author || "?").slice(0, 1))}</span>
+            ${avatarHTML(p.authorUsername, p.author)}
             <div class="post-meta">
               <span class="post-author">${escHTML(p.author || "匿名")}${forumRoleTag(p.authorRole)}${p.essence ? `<span class="essence-chip">精华</span>` : ""}</span>
               <span class="post-time">${escHTML(p.time || "刚刚")}</span>
@@ -5110,9 +5153,37 @@
       const images = Array.isArray(p.images) ? p.images.filter(Boolean) : [];
       const loc = p.location && p.location.name ? p.location : null;
       const sectionName = (FORUM_SECTION_MAP[p.section] || {}).name || "日常记录";
-      const commentHtml = comments.length ? comments.map(c => `
+      const commentHtml = comments.length ? (() => {
+        const replyIds = new Set();
+        comments.forEach(c => (c.replies || []).forEach(r => { if (r && r.id) replyIds.add(r.id); }));
+        const childrenOf = {};
+        comments.forEach(c => (c.replies || []).forEach(r => {
+          if (!r) return;
+          const pid = String(r.parentId || "");
+          // 父回复不存在（被删/旧数据异常）时挂回当前主楼，保证内容不丢
+          const key = pid && replyIds.has(pid) ? pid : c.id;
+          (childrenOf[key] = childrenOf[key] || []).push(r);
+        }));
+        const renderReplyTree = (parentId, depth) => {
+          const list = childrenOf[parentId] || [];
+          if (!list.length) return "";
+          return list.map(r => {
+            const kids = childrenOf[r.id] || [];
+            return `<div class="comment-reply-block" data-depth="${Math.min(depth, 5)}">
+              <div class="comment-reply">
+                <b>${escHTML(r.author || "匿名")}</b>${forumRoleTag(r.authorRole)}：${escHTML(r.text || "")}
+                <span class="comment-time">${escHTML(r.time || "刚刚")}</span>
+                <button class="comment-reply-btn mini" data-reply="${escHTML(r.id)}">回复</button>
+              </div>
+              ${kids.length ? `<div class="comment-replies">${renderReplyTree(r.id, depth + 1)}</div>` : ""}
+            </div>`;
+          }).join("");
+        };
+        return comments.map(c => {
+          const rootKids = childrenOf[c.id] || [];
+          return `
         <div class="comment-item">
-          <span class="avatar">${escHTML(String(c.author || "?").slice(0, 1))}</span>
+          ${avatarHTML(c.username, c.author)}
           <div class="comment-main">
             <div class="comment-head">
               <span class="comment-author">${escHTML(c.author || "匿名")}${forumRoleTag(c.authorRole)}</span>
@@ -5120,16 +5191,11 @@
             </div>
             <div class="comment-text">${escHTML(c.text || "")}</div>
             <button class="comment-reply-btn" data-reply="${escHTML(c.id)}">回复</button>
-            ${(c.replies || []).length ? `
-              <div class="comment-replies">
-                ${c.replies.map(r => `
-                  <div class="comment-reply">
-                    <b>${escHTML(r.author || "匿名")}</b>${forumRoleTag(r.authorRole)}：${escHTML(r.text || "")}
-                    <span class="comment-time">${escHTML(r.time || "刚刚")}</span>
-                  </div>`).join("")}
-              </div>` : ""}
+            ${rootKids.length ? `<div class="comment-replies">${renderReplyTree(c.id, 0)}</div>` : ""}
           </div>
-        </div>`).join("") : `<div class="comment-empty">暂无评论，来说点什么吧</div>`;
+        </div>`;
+        }).join("");
+      })() : `<div class="comment-empty">暂无评论，来说点什么吧</div>`;
 
       wrap.innerHTML = `
         ${forumPageHead("forumBack", "神降计划◆论坛", `
@@ -5139,7 +5205,7 @@
         `)}
         <div class="forum-detail">
           <div class="detail-author-row">
-            <span class="avatar big">${escHTML(String(p.author || "?").slice(0, 1))}</span>
+            ${avatarHTML(p.authorUsername, p.author, "big")}
             <div class="detail-author-meta">
               <div class="detail-author">${escHTML(p.author || "匿名")}${forumRoleTag(p.authorRole)}</div>
               <div class="detail-sub">${escHTML(p.time || "刚刚")} · ${escHTML(sectionName)}${p.essence ? `<span class="essence-chip">精华</span>` : ""}</div>
@@ -5244,12 +5310,19 @@
 
       wrap.querySelectorAll("[data-reply]").forEach(btn => {
         btn.onclick = () => {
-          const c = comments.find(x => x.id === btn.dataset.reply);
-          replyTo = c ? c.id : null;
+          const id = btn.dataset.reply;
+          let target = comments.find(x => x.id === id);
+          if (!target) {
+            for (const c of comments) {
+              const hit = (c.replies || []).find(x => x.id === id);
+              if (hit) { target = hit; break; }
+            }
+          }
+          replyTo = target ? id : null;
           const hint = wrap.querySelector("#replyHint");
-          if (hint && c) {
+          if (hint && target) {
             hint.hidden = false;
-            hint.textContent = `回复 @${c.author}（点击取消）`;
+            hint.textContent = `回复 @${target.author}（点击取消）`;
             hint.onclick = () => { replyTo = null; hint.hidden = true; };
           }
           const input = wrap.querySelector("#commentInput");
@@ -5275,7 +5348,7 @@
           const r = await window.SDJCloud.addForumComment(postId, text, replyTo || "");
           if (!r.ok) { toast(r.error || "评论失败"); return; }
           const cur2 = loadState().forum.find(x => x.id === postId);
-          if (cur2) { cur2.comments = r.comments || []; saveState(); }
+          if (cur2) { cur2.comments = normalizeForumComments(r.comments || []); saveState(); }
           input.value = "";
           replyTo = null;
           const hint = wrap.querySelector("#replyHint");
@@ -5287,14 +5360,21 @@
         if (!cur) return;
         cur.comments = cur.comments || [];
         if (replyTo) {
-          const target = cur.comments.find(x => x.id === replyTo);
-          if (target) {
-            target.replies = target.replies || [];
-            target.replies.push({
+          // 楼中楼：目标可能是主楼，也可能是任意一条回复
+          let root = cur.comments.find(x => x.id === replyTo);
+          if (!root) {
+            root = cur.comments.find(c => (c.replies || []).some(r => r.id === replyTo));
+          }
+          if (root) {
+            root.replies = root.replies || [];
+            root.replies.push({
+              id: uid("c"),
               author: session.displayName,
               authorRole: session.role,
+              username: session.username || "",
               text,
-              time: "刚刚"
+              time: "刚刚",
+              parentId: cur.comments.some(x => x.id === replyTo) ? "" : replyTo
             });
           }
         } else {
@@ -5302,6 +5382,7 @@
             id: uid("c"),
             author: session.displayName,
             authorRole: session.role,
+            username: session.username || "",
             text,
             time: "刚刚",
             replies: []
@@ -5716,6 +5797,65 @@
   let socialProfilesBusy = false;
   const SOCIAL_CLOUD_AT = "sdj_social_cloud_at";
 
+  /* ---------------- 全站头像解析 ----------------
+   * 所有列表/论坛/成员/聊天共用同一份「已上传头像」缓存；
+   * 未上传头像时退回名字首字，避免出现 # 或空头像。 */
+  const avatarByKey = new Map();
+  const avatarKey = (s) => String(s || "").trim().toLowerCase();
+
+  function rememberProfileAvatars(list) {
+    (list || []).forEach((p) => {
+      if (!p) return;
+      const uname = p.username || "";
+      const name = p.display_name || p.name || uname;
+      const url = p.avatar_url || p.avatar || "";
+      const rec = { url, name, username: uname };
+      if (uname) avatarByKey.set(avatarKey(uname), rec);
+      if (name) avatarByKey.set(avatarKey(name), rec);
+    });
+  }
+
+  function avatarRecord(username, displayName) {
+    const k1 = avatarKey(username);
+    const k2 = avatarKey(displayName);
+    const rec = (k1 && avatarByKey.get(k1)) || (k2 && avatarByKey.get(k2));
+    if (rec) return rec;
+    const p = socialProfilesCache.find((x) =>
+      (k1 && avatarKey(x.username) === k1) || (k2 && avatarKey(x.name) === k2));
+    if (p && p.avatar) return { url: p.avatar, name: p.name, username: p.username };
+    const acc = getAccounts().find((a) =>
+      (k1 && avatarKey(a.username) === k1) || (k2 && avatarKey(a.displayName) === k2));
+    if (acc && acc.avatar) return { url: acc.avatar, name: acc.displayName, username: acc.username };
+    return null;
+  }
+
+  function avatarHTML(username, displayName, extraClass) {
+    const rec = avatarRecord(username, displayName);
+    const name = displayName || (rec && rec.name) || username || "?";
+    const cls = "avatar" + (extraClass ? " " + extraClass : "") + (rec && rec.url ? " has-photo" : "");
+    const style = rec && rec.url ? ` style="background-image:url('${escHTML(rec.url)}')"` : "";
+    return `<span class="${cls}" data-avatar-user="${escHTML(username || "")}" data-avatar-name="${escHTML(name)}"${style}>${rec && rec.url ? "" : escHTML(socialInitial(name))}</span>`;
+  }
+
+  function syncAvatarElement(el) {
+    if (!el || !el.dataset) return;
+    const rec = avatarRecord(el.dataset.avatarUser, el.dataset.avatarName);
+    if (rec && rec.url) {
+      el.classList.add("has-photo");
+      el.style.backgroundImage = "url(" + JSON.stringify(rec.url) + ")";
+      el.textContent = "";
+    } else {
+      el.classList.remove("has-photo");
+      el.style.backgroundImage = "";
+      el.textContent = socialInitial(el.dataset.avatarName || el.dataset.avatarUser);
+    }
+  }
+
+  function refreshVisibleAvatars(root) {
+    const scope = root || document;
+    scope.querySelectorAll(".avatar[data-avatar-user]").forEach(syncAvatarElement);
+  }
+
   function defaultSocial() {
     return {
       v: 1,
@@ -5972,6 +6112,8 @@
         createdAt: p.created_at || "",
         updatedAt: p.updated_at || ""
       }));
+      rememberProfileAvatars(socialProfilesCache);
+      refreshVisibleAvatars();
       const after = socialProfilesCache.map(sig).sort().join(",");
       if (before !== after) {
         refreshSocialBadges();
@@ -6587,10 +6729,10 @@
   }
 
   function socialInitial(name) {
-    const ch = String(name || "").trim()[0] || "#";
+    const ch = String(name || "").trim()[0] || "?";
     if (/[a-zA-Z]/.test(ch)) return ch.toUpperCase();
-    if (/[\u4e00-\u9fa5]/.test(ch)) return PINYIN_INITIALS[ch] || "#";
-    return "#";
+    if (/[\u4e00-\u9fa5]/.test(ch)) return PINYIN_INITIALS[ch] || ch;
+    return ch;
   }
 
   function currentSocialUser() {
@@ -6826,7 +6968,7 @@
 
   function convRow(c) {
     return `<button class="conv-item" data-sact="conv" data-kind="${c.kind}" data-id="${escHTML(c.id)}">
-      <span class="avatar conv-avatar ${c.kind === "group" ? "group" : ""}">${escHTML(c.initial)}</span>
+      ${c.kind === "friend" ? avatarHTML(c.id, c.name, "conv-avatar") : `<span class="avatar conv-avatar group">${escHTML(c.initial)}</span>`}
       <span class="conv-main">
         <span class="conv-top">
           <span class="conv-name">${escHTML(c.name)}${c.kind === "group" ? "<em>（" + c.count + "）</em>" : ""}${c.forming ? '<i class="conv-forming">组建中</i>' : ""}</span>
@@ -6856,7 +6998,7 @@
     return `
       <div class="search-note">全局搜索「${escHTML(q)}」 · 好友 ${friends.length} / 群聊 ${groups.length} / 会话 ${convHits.length}</div>
       ${sec("好友", friends.map(u => `<button class="person-row" data-sact="open-user" data-user="${escHTML(u.username)}">
-          <span class="avatar">${escHTML(socialInitial(u.name))}</span>
+          ${avatarHTML(u.username, u.name)}
           <span class="person-main"><span class="person-name">${escHTML(u.name)}</span><span class="person-sub">${roleLabelOf(u.role)} · ${escHTML(u.sign || "暂无签名")}</span></span>
           <span class="person-state">资料</span>
         </button>`))}
@@ -6888,7 +7030,7 @@
 
     const header = `<div class="chat-top">
       <button class="chat-back" data-sact="back" title="返回">‹</button>
-      <span class="avatar">${escHTML(socialInitial(title))}</span>
+      ${isGroup ? `<span class="avatar">${escHTML(socialInitial(title))}</span>` : avatarHTML(other, title)}
       <div class="chat-title-wrap">
         <div class="chat-title">${escHTML(title)}${isGroup ? "（<span data-chat-count>" + g.members.length + "</span>）" : ""}</div>
         <div class="chat-sub">
@@ -6997,7 +7139,7 @@
         ${letters.map(L => `<div class="az-group" id="az-${L}">
           <div class="az-head">${L}</div>
           ${map[L].map(u => `<button class="friend-card" data-sact="conv" data-kind="friend" data-id="${escHTML(u.username)}">
-            <span class="avatar">${escHTML(socialInitial(u.name))}</span>
+            ${avatarHTML(u.username, u.name)}
             <span class="friend-card-main">
               <span class="friend-card-name">${escHTML(u.name)}${u.npc ? '<i class="npc-chip">NPC</i>' : ""}</span>
               <span class="friend-card-sub">${roleLabelOf(u.role)} · ${escHTML(u.sign || "这位同路人还没有留下签名。")}</span>
@@ -7026,7 +7168,7 @@
         </div>
         <div class="tag-members">
           ${members.length ? members.map(u => `<div class="tag-member" data-drag-user="${escHTML(u.username)}">
-            <span class="avatar">${escHTML(socialInitial(u.name))}</span>
+            ${avatarHTML(u.username, u.name)}
             <span class="tag-member-name">${escHTML(u.name)}</span>
             <button class="tag-chat" data-sact="conv" data-kind="friend" data-id="${escHTML(u.username)}">聊天</button>
           </div>`).join("") : '<div class="tag-empty">该分组暂无好友</div>'}
@@ -7084,7 +7226,7 @@
     const pending = incoming.filter(r => r.status === "pending");
     const history = incoming.filter(r => r.status !== "pending");
     const row = (r, isPending) => `<div class="notice-item">
-      <span class="avatar">${escHTML(socialInitial(nameOf(r.from)))}</span>
+      ${avatarHTML(r.from, nameOf(r.from))}
       <div class="notice-body">
         <div class="notice-title">${escHTML(nameOf(r.from))}<span class="notice-time">${escHTML(socTime(r.createdAt))}</span></div>
         <div class="notice-msg">${r.message ? "附言：" + escHTML(r.message) : "想与你共谈密语"}</div>
@@ -7166,7 +7308,7 @@
       <div class="picker-list">
         ${list.length ? list.map(u => `<button class="picker-row ${v.picked.includes(u.username) ? "on" : ""}" data-sact="pick-toggle" data-user="${escHTML(u.username)}">
           <span class="pick-box">${v.picked.includes(u.username) ? "✓" : ""}</span>
-          <span class="avatar">${escHTML(socialInitial(u.name))}</span>
+          ${avatarHTML(u.username, u.name)}
           <span class="picker-name">${escHTML(u.name)}${u.npc ? '<i class="npc-chip">NPC</i>' : ""}</span>
           <span class="picker-role">${roleLabelOf(u.role)}</span>
         </button>`).join("") : '<div class="notice-empty">没有可邀请的好友</div>'}
@@ -7305,7 +7447,7 @@
             const role = m === g.owner ? "群主" : (g.admins || []).includes(m) ? "管理员" : "";
             const canKick = removing && m !== g.owner && (isOwner || !(g.admins || []).includes(m));
             return `<div class="gi-member ${canKick ? "kickable" : ""}" ${canKick ? 'data-sact="remove-member" data-gid="' + g.id + '" data-user="' + escHTML(m) + '"' : ""}>
-              <span class="avatar">${escHTML(socialInitial(nameOf(m)))}</span>
+              ${avatarHTML(m, nameOf(m))}
               <span class="gi-member-name">${escHTML(nameOf(m))}</span>
               ${role ? '<i class="gi-role ' + (role === "群主" ? "owner" : "admin") + '">' + role + "</i>" : ""}
               ${canKick ? '<i class="gi-kick">−</i>' : ""}
@@ -7364,9 +7506,9 @@
       <div class="gm-block panel-cut">
         <div class="gm-title">管理员 <em>${admins.length} / ${GROUP_MAX_ADMINS}</em></div>
         <div class="gm-admin-list">
-          <div class="gm-admin-row owner"><span class="avatar">${escHTML(socialInitial(nameOf(g.owner)))}</span><span class="gm-admin-name">${escHTML(nameOf(g.owner))}</span><i class="gi-role owner">群主</i></div>
+          <div class="gm-admin-row owner">${avatarHTML(g.owner, nameOf(g.owner))}<span class="gm-admin-name">${escHTML(nameOf(g.owner))}</span><i class="gi-role owner">群主</i></div>
           ${admins.map(u => `<div class="gm-admin-row">
-            <span class="avatar">${escHTML(socialInitial(u.name))}</span>
+            ${avatarHTML(u.username, u.name)}
             <span class="gm-admin-name">${escHTML(u.name)}</span>
             <i class="gi-role admin">管理员</i>
             ${isOwner ? '<button class="btn-sm ghost" data-sact="drop-admin" data-user="' + escHTML(u.username) + '">撤销</button>' : ""}
@@ -7375,7 +7517,7 @@
         ${isOwner ? `<div class="gm-candidates">
           <div class="gm-sub-title">可设为管理员的成员</div>
           ${candidates.length ? candidates.map(u => `<div class="gm-cand-row">
-            <span class="avatar">${escHTML(socialInitial(u.name))}</span>
+            ${avatarHTML(u.username, u.name)}
             <span class="gm-admin-name">${escHTML(u.name)}</span>
             <button class="btn-sm" data-sact="make-admin" data-user="${escHTML(u.username)}">设为管理员</button>
           </div>`).join("") : '<div class="notice-empty">暂无可任命的成员</div>'}
@@ -8016,9 +8158,7 @@
     const pend = pendingFriendBetween(me, username);
     const incoming = loadSocial().friendRequests.find(r => r.from === username && r.to === me && r.status === "pending");
     const online = isOnline(username);
-    const avatarHtml = u.avatar
-      ? `<span class="avatar big has-photo" style="background-image:url('${escHTML(u.avatar)}')"></span>`
-      : `<span class="avatar big">${escHTML(socialInitial(u.name))}</span>`;
+    const avatarHtml = avatarHTML(username, u.name, "big");
     const days = u.createdAt && Number.isFinite(new Date(u.createdAt).getTime())
       ? Math.max(0, Math.floor((Date.now() - new Date(u.createdAt).getTime()) / 86400000))
       : null;
@@ -8291,6 +8431,8 @@
     if (window.SDJCloud && window.SDJCloud.enabled()) {
       isOwner = !!(window.SDJCloud.isOwner && window.SDJCloud.isOwner());
       const profiles = await window.SDJCloud.listProfiles();
+      rememberProfileAvatars(profiles);
+      refreshVisibleAvatars();
       memberCloudFp = profilesFingerprint(profiles);
       memberCloudAt = Date.now();
       if (profiles && profiles.length) {
@@ -8337,7 +8479,7 @@
           <div class="member-row head"><span>成员</span><span>身份</span><span>状态</span><span>最后活动</span><span>操作</span></div>
           ${rows.map(m => `
             <div class="member-row">
-              <span class="member-name"><span class="avatar">${escHTML(String(m.name).slice(0, 1))}</span>${escHTML(m.name)}${m.current ? `<span class="role-chip">当前</span>` : ""}</span>
+              <span class="member-name">${avatarHTML(m.username, m.name)}${escHTML(m.name)}${m.current ? `<span class="role-chip">当前</span>` : ""}</span>
               <span>${escHTML(m.role)}</span>
               <span class="${(m.status === "受限" || m.status === "已拉黑" || m.status === "已移出") ? "state-warn" : "state-ok"}">${escHTML(m.status)}</span>
               <span class="muted">${escHTML(m.lastSeen)}</span>
@@ -8467,7 +8609,7 @@
             return `
             <div class="approval-card panel-cut">
               <div class="approval-head">
-                <span class="avatar">${escHTML(String(r.applicant.name || "?").slice(0, 1))}</span>
+                ${avatarHTML(r.applicant.username, r.applicant.name)}
                 <div class="approval-meta">
                   <div class="approval-name">${escHTML(r.missionTitle)}<span class="role-chip">${escHTML(r.level)} 级</span></div>
                   <div class="approval-type">提交人：${escHTML(r.applicant.name)}（${escHTML(r.applicant.username)} · ${escHTML(r.applicant.role)}） · ${fmtTime(r.submittedAt)}</div>
@@ -8501,7 +8643,7 @@
           ${pending.length ? pending.map(r => `
             <div class="approval-card panel-cut">
               <div class="approval-head">
-                <span class="avatar">${escHTML(String(r.displayName || "?").slice(0, 1))}</span>
+                ${avatarHTML(r.username, r.displayName)}
                 <div class="approval-meta">
                   <div class="approval-name">${escHTML(r.displayName)}<span class="role-chip">${roleName}</span></div>
                   <div class="approval-type">账号：${escHTML(r.username)} · 申请于 ${fmtTime(r.createdAt)}</div>
