@@ -1263,6 +1263,18 @@ select.input-line { color: var(--fg-dim); }
 .label-l4 .label-text { font-size: 11px; color: var(--fg-mute); }
 .label-line { background: linear-gradient(to bottom, var(--accent), transparent); width: 1px; }
 .label-dot { background: var(--accent); box-shadow: 0 0 12px rgba(200, 163, 87, 0.8); width: 5px; height: 5px; border-radius: 0; transform: rotate(45deg); }
+/* L4 不做区域划分，只保留发光点标注 */
+.label-l4 .label-line { display: none; }
+.label-l4 .label-dot {
+  width: 9px; height: 9px; background: #ffdd94;
+  box-shadow: 0 0 10px rgba(255, 221, 148, 0.95), 0 0 22px rgba(255, 200, 90, 0.55);
+  outline: 1px solid rgba(255, 221, 148, 0.5); outline-offset: 2px;
+}
+.label-l4 .label-text {
+  font-size: 11px; color: #ffe6ae;
+  border-color: rgba(255, 221, 148, 0.38);
+  background: rgba(8, 14, 16, 0.86);
+}
 .map-label:hover .label-text { background: rgba(200, 163, 87, 0.12); border-color: var(--line-strong); transform: translateY(-1px); }
 .label-district { font-family: var(--font-en); font-size: 8px; letter-spacing: 0.1em; color: var(--accent-bright); opacity: 0.85; }
 
@@ -1270,8 +1282,8 @@ select.input-line { color: var(--fg-dim); }
   background: var(--plate-bg); border: 1px solid var(--line-soft); border-top: 2px solid var(--accent);
   border-radius: 0; box-shadow: 0 34px 80px rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(16px);
-  max-height: calc(100% - 48px);
-  overflow: hidden;
+  max-height: min(76vh, 660px);
+  overflow-y: auto; overflow-x: hidden;
 }
 .map-info-panel .info-body {
   flex: 1 1 auto; min-height: 0; overflow-y: auto;
@@ -1456,12 +1468,10 @@ select.input-line { color: var(--fg-dim); }
   }
   .content-container.map-mode { padding: 0; }
   .map-info-panel {
-    width: calc(100% - 24px); left: 12px; right: 12px; top: auto; bottom: 12px;
-    height: 44vh; max-height: 44vh; border-top: 1px solid var(--line-soft); border-left: 1px solid var(--line-soft);
-    /* 手机端改为底部抽屉：隐藏时向下收起，避免 translateX 造成横向溢出与整页漂移 */
-    transform: translateY(110%);
+    width: calc(100vw - 24px); max-height: 68vh;
+    border-top: 1px solid var(--line-soft); border-left: 1px solid var(--line-soft);
   }
-  .map-info-panel.show { transform: translateY(0); }
+  .map-info-panel.show { transform: translate(-50%, -50%) scale(1); }
   .mission-dock { width: 210px; bottom: 10px; right: 8px; }
   .map-hint { bottom: 8px; font-size: 10px; letter-spacing: 0.08em; }
   .modal-panel { padding: 20px 18px; }

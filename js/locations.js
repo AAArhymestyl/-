@@ -42,13 +42,25 @@ export const SEED_LOCATIONS = [
   {"id": "b_l3_16", "name": "灰烬之地", "district": "B区", "level": 3, "lat": 10.061, "lon": -89.016, "desc": "整片地表覆着温热的灰，脚印隔夜自愈。"},
   {"id": "b_l3_17", "name": "阿斯德拉海底废墟", "district": "B区", "level": 3, "lat": 9.997, "lon": -96.2, "desc": "沉入海底的古城，塔影仍立在原处。"},
   {"id": "b_l3_18", "name": "塞纳港", "district": "B区", "level": 3, "lat": 8.483, "lon": -93.006, "desc": "港口登记的所有船名都带同一个字。"},
-  {"id": "b_l3_19", "name": "幽影沼泽", "district": "B区", "level": 3, "lat": 9.668, "lon": -90.357, "desc": "沼泽会复制走入者的声音，直到人被替换。"}
+  {"id": "b_l3_19", "name": "幽影沼泽", "district": "B区", "level": 3, "lat": 9.668, "lon": -90.357, "desc": "沼泽会复制走入者的声音，直到人被替换。"},
+  {"id": "a_l4_01", "name": "食堂（三层）", "district": "A区", "level": 4, "lat": 30.546, "lon": -103.89, "desc": "清溪中学的食堂，三层窗口常年排着队。"},
+  {"id": "a_l4_02", "name": "男生宿舍（A栋）", "district": "A区", "level": 4, "lat": 30.546, "lon": -103.54, "desc": "熄灯后走廊尽头仍亮着一盏灯。"},
+  {"id": "a_l4_03", "name": "女生宿舍（B栋）", "district": "A区", "level": 4, "lat": 30.546, "lon": -103.22, "desc": "阳台上的花每天都会换一个朝向。"},
+  {"id": "a_l4_04", "name": "小卖铺", "district": "A区", "level": 4, "lat": 30.346, "lon": -103.18, "desc": "卖着早已停产的商品，价格却一直没变。"},
+  {"id": "a_l4_05", "name": "行政楼", "district": "A区", "level": 4, "lat": 30.326, "lon": -104.29, "desc": "档案室里有一整面墙是空的。"},
+  {"id": "a_l4_06", "name": "操场", "district": "A区", "level": 4, "lat": 30.026, "lon": -103.79, "desc": "夜跑时计圈器总比人多记一圈。"},
+  {"id": "a_l4_07", "name": "学校大门", "district": "A区", "level": 4, "lat": 30.066, "lon": -103.34, "desc": "门禁记录里出现过没有姓名的学生。"},
+  {"id": "a_l4_08", "name": "3栋教学楼（星火楼）", "district": "A区", "level": 4, "lat": 30.046, "lon": -104.46, "desc": "顶层教室的黑板上写着明天的日期。"},
+  {"id": "a_l4_09", "name": "（中央花坛）", "district": "A区", "level": 4, "lat": 29.766, "lon": -104.3, "desc": "花坛中央的雕塑每天都会偏移一点。"},
+  {"id": "a_l4_10", "name": "1栋教学楼（启明楼）", "district": "A区", "level": 4, "lat": 29.576, "lon": -104.46, "desc": "最早建成的教学楼，钟声仍按旧时刻敲响。"},
+  {"id": "a_l4_11", "name": "2栋教学楼（扬帆楼）", "district": "A区", "level": 4, "lat": 29.576, "lon": -104.06, "desc": "走廊尽头的窗户望出去不是操场。"}
 ];
 
 /* 区域锚点与固定地点：地图引擎与应用层共用同一份数据，避免两处硬编码 */
 export const AREA_LABELS = [
   { id: "area_a", name: "A区", district: "A区", level: 2, lat: 28.6, lon: -101.7, desc: "繁华的隐秘都市，A 区 19 处地点散布其间。" },
   { id: "area_b", name: "B区", district: "B区", level: 2, lat: 12.4, lon: -91.4, desc: "荒凉的暗黑海岸，B 区 19 处地点沿湾分布。" },
+  { id: "area_x", name: "X区（未解锁）", district: "", level: 2, lat: 33, lon: -96, desc: "大陆北侧尚未解锁的区域。" },
   { id: "l1_1", name: "【 未知区域? 】", level: 1, lat: 30, lon: -100, desc: "未知的广袤大陆" },
   { id: "l1_2", name: "【 未知区域? 】", level: 1, lat: -20, lon: 60, desc: "迷雾笼罩的板块" },
   { id: "l1_3", name: "【 未知区域? 】", level: 1, lat: 10, lon: 150, desc: "未被探索的领域" },

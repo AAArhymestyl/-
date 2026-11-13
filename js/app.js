@@ -1,4 +1,4 @@
-/* 神降计划·塔 - 应用主逻辑（路由 / 登录 / 注册 / 找回密码 / 主控台） */
+﻿/* 神降计划·塔 - 应用主逻辑（路由 / 登录 / 注册 / 找回密码 / 主控台） */
 (function () {
   "use strict";
 
@@ -27,7 +27,7 @@
   }
 
   // 全站缓存版本号：发布时同时改这里、map.js 的 ASSET_V、index.html 的 ?v=
-  const ASSET_V = "48";
+  const ASSET_V = "60";
   
   const routes = {
     "/login": renderLogin,
@@ -2449,7 +2449,8 @@
     container.innerHTML = `
       <div id="globe-container"></div>
       
-      <!-- 右侧信息面板 -->
+      <!-- 地点详情：居中弹窗 + 遮罩，与右侧委托侧边栏分离 -->
+      <div class="map-info-backdrop" id="infoBackdrop"></div>
       <div class="map-info-panel" id="infoPanel">
         <div class="info-header">
           <div class="info-title" id="infoTitle">地点名称</div>
@@ -4246,6 +4247,10 @@
   function openMissionDetail(missionId) {
     const m = (loadState().missions || []).find(x => x.id === missionId);
     if (!m) return;
+    // 先收起地点详情弹窗，保证「查看委托详情」只有一个小方框、且正对屏幕中央
+    if (window.SDJMapEngine && typeof window.SDJMapEngine.closeLocationPanel === "function") {
+      try { window.SDJMapEngine.closeLocationPanel(); } catch (e) {}
+    }
     const overlay = el("div", { class: "modal-overlay", id: "missionDetailModal" });
     const panel = el("div", { class: "modal-panel panel-cut wide" });
     overlay.appendChild(panel);
