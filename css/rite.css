@@ -755,6 +755,8 @@ select.input-line { color: var(--fg-dim); }
 .node-icon { opacity: 0.9; }
 .node-edit { color: var(--fg-mute); }
 .node-edit:hover { color: var(--accent-bright); border-color: var(--line-soft); }
+.node-del { color: var(--fg-mute); }
+.node-del:hover { color: #ff6a5a; border-color: rgba(255, 106, 90, 0.45); }
 .node-title { font-family: var(--font-display); font-size: 16px; color: var(--ivory); }
 .node-meta { font-family: var(--font-en); font-size: 9px; letter-spacing: 0.08em; color: var(--fg-mute); }
 .period-chip { color: var(--accent-bright); border: 1px solid rgba(200, 163, 87, 0.35); font-family: var(--font-en); }

@@ -7,7 +7,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 // 静态 import 必须写字面量：发布时与 app.js 的 ASSET_V、index.html 的 ?v= 同步递增
-import { SEED_LOCATIONS, AREA_LABELS } from "./locations.js?v=60";
+import { SEED_LOCATIONS, AREA_LABELS } from "./locations.js?v=61";
 
 const MAP_STORE_KEY = "sdj_map_data_v2";
 
@@ -16,7 +16,16 @@ const escHtml = (s) => String(s == null ? "" : s)
 
 const DEG2RAD = Math.PI / 180;
 const LAND_RADIUS = 0.9830;
-const LINE_RADIUS = 0.9920;
+// 海岸线与陆地几乎同半径，避免贴近时丝带浮在陆地上方产生错位
+const LINE_RADIUS = 0.9845;
+// 标签与委托标记必须落在球面附近：此前放在 1.05 半径，近距离缩放时
+// 0.07 的高度差会放大成严重视差，地标看起来「漂」到海里甚至球体外的黑暗区
+const LABEL_RADIUS = 0.9832;
+const MARKER_RADIUS = 0.9842;
+
+// 已完成列表里的委托（成功 / 失败 / 截止）视为关闭态，地图上不再显示任何标记
+const MISSION_CLOSED = new Set(["done", "failed", "expired"]);
+const isMissionOpen = (m) => !!m && !MISSION_CLOSED.has(m.status);
 
 /* 三块大陆：一块已探索（A / B 区所在地），两块未探索 */
 const CONTINENT_SEEDS = [
@@ -235,7 +244,6 @@ export class GlobeMapEngine {
     // 动画循环里复用的临时向量，避免每帧 new Vector3 造成 GC 抖动
     this._vLabel = new THREE.Vector3();
     this._vDir = new THREE.Vector3();
-    this._vCamDir = new THREE.Vector3();
     this._lastTick = performance.now();
 
     this.init();
@@ -502,7 +510,7 @@ export class GlobeMapEngine {
     div.dataset.id = data.id;
 
     const label = new CSS2DObject(div);
-    label.position.copy(this.getPos(data.lat, data.lon, 1.05));
+    label.position.copy(this.getPos(data.lat, data.lon, LABEL_RADIUS));
     label.userData = data;
 
     div.addEventListener("click", (e) => {
@@ -585,7 +593,8 @@ export class GlobeMapEngine {
       ? window.SDJSession.current() : null;
     const me = sess ? (sess.username || sess.displayName) : "";
 
-    const list = this.missionsAt(loc);
+    // 关闭态委托（已完成 / 已失败 / 已截止）一律不在弹出面板里出现
+    const list = this.missionsAt(loc).filter(isMissionOpen);
     const newBtn = isAdmin
       ? `<button class="map-mission-new" data-map-new>＋ 在此地点新增委托</button>` : "";
 
@@ -675,7 +684,7 @@ export class GlobeMapEngine {
       <div class="label-line"></div>
       <div class="label-dot"></div>`;
     const label = new CSS2DObject(div);
-    label.position.copy(this.getPos(Number(loc.lat), Number(loc.lon), 1.05));
+    label.position.copy(this.getPos(Number(loc.lat), Number(loc.lon), LABEL_RADIUS));
     label.userData = Object.assign({ level: 3, desc: "来自论坛帖子的位置标记。" }, loc);
     div.addEventListener("click", (e) => { e.stopPropagation(); this.onLabelClick(label); });
     this.labelGroup.add(label);
@@ -841,14 +850,15 @@ export class GlobeMapEngine {
     this.missionAnchors = [];
 
     const palette = this.missionPalette();
-    const missions = this.getMissions().filter(m => m.status !== "done");
+    // 只画仍在进行中的委托；已完成 / 已失败 / 已截止的不留任何光圈
+    const missions = this.getMissions().filter(isMissionOpen);
     const group = new THREE.Group();
 
     missions.forEach(mission => {
       const loc = this.resolveMissionLocation(mission);
       if (!loc) return;
       const meta = palette[mission.level] || { color: "#ffffff" };
-      const pos = this.getPos(Number(loc.lat), Number(loc.lon), 1.06);
+      const pos = this.getPos(Number(loc.lat), Number(loc.lon), MARKER_RADIUS);
 
       const dot = new THREE.Mesh(
         new THREE.CircleGeometry(0.017, 20),
@@ -938,7 +948,7 @@ export class GlobeMapEngine {
     if (!this.dockListEl) return;
     const palette = this.missionPalette();
     const visible = this.visibleMissionAnchors();
-    const all = this.getMissions().filter(m => m.status !== "done");
+    const all = this.getMissions().filter(isMissionOpen);
     const unresolved = all.filter(m => !this.resolveMissionLocation(m));
 
     const key = visible.map(a => a.id).sort().join("|") + "#" + unresolved.length;
@@ -1015,9 +1025,13 @@ export class GlobeMapEngine {
     // A 级委托：一圈圈向外扩散的警戒波纹
     if (this.ripples.length) {
       const clock = performance.now() * 0.001;
+      // 贴近球体时同步收小波纹：屏幕尺寸 ∝ 世界尺寸 / (视距 - 球半径)，
+      // 按 (dist - 0.98) 等比例缩小才能保持固定的视觉大小，
+      // 否则单个光圈会铺满整屏、像一块异常的色斑
+      const shrink = Math.min(1, Math.max(0.03, (dist - 0.98) / 1.22));
       this.ripples.forEach(r => {
         const k = (clock * 0.55 + r.phase) % 1;
-        r.mesh.scale.setScalar(1 + k * 6);
+        r.mesh.scale.setScalar((1 + k * 6) * shrink);
         r.mesh.material.opacity = 0.6 * (1 - k);
       });
     }
@@ -1031,11 +1045,17 @@ export class GlobeMapEngine {
     const dt = Math.min(0.05, (now - this._lastTick) / 1000);
     this._lastTick = now;
     if (this._coastMats) {
-      this._coastMats.forEach((m) => { m.uniforms.uOpacity.value = 1; });
+      // 海岸线按当前视野换算成固定像素宽，避免贴近时变成一条宽色带；
+      // 放到 L3 / L4 视野时淡出，陆地轮廓已足够清晰，细丝带的折线接缝反而碍眼
+      const pxPerDeg = this._pixelsPerDegree(dist);
+      const halfDeg = 1.6 / Math.max(1, pxPerDeg);
+      const half = Math.min(1, Math.max(0.02, halfDeg / 0.24));
+      const coastOp = dist >= 1.95 ? 1 : (dist <= 1.70 ? 0 : (dist - 1.70) / 0.25);
+      this._coastMats.forEach((m) => {
+        m.uniforms.uOpacity.value = coastOp;
+        m.uniforms.uHalf.value = half;
+      });
     }
-
-    const camDir = this._vCamDir;
-    this.camera.getWorldDirection(camDir);
 
     this.labels.forEach(label => {
       const level = label.userData.level;
@@ -1063,10 +1083,13 @@ export class GlobeMapEngine {
       }
 
       const labelWorldPos = label.getWorldPosition(this._vLabel);
-      const dirToLabel = this._vDir.copy(labelWorldPos).sub(this.camera.position).normalize();
-      const facing = camDir.dot(dirToLabel);
-
-      if (facing < 0.1) targetOpacity *= Math.max(0, (facing + 0.2) / 0.3);
+      // 地平线遮挡：只有朝向相机的那半球可见。
+      // 之前用视线夹角判断，靠近球体边缘的标签仍会浮在球外的黑暗区。
+      const camLen = this.camera.position.length();
+      this._vDir.copy(labelWorldPos).normalize();
+      const cosAngle = this._vDir.dot(this.camera.position) / Math.max(1e-6, camLen);
+      const horizon = LABEL_RADIUS / Math.max(1e-6, camLen);
+      targetOpacity *= Math.max(0, Math.min(1, (cosAngle - horizon) / 0.035));
 
       // 初始 style.opacity 为空，parseFloat 会得到 NaN，必须兜底为 0
       const currentOpacity = parseFloat(label.element.style.opacity) || 0;
@@ -1089,6 +1112,21 @@ export class GlobeMapEngine {
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
     this.labelRenderer.render(this.scene, this.camera);
+  }
+
+  // 当前视野下每度对应多少屏幕像素（用于把海岸线宽钉在固定像素）
+  _pixelsPerDegree(dist) {
+    const h = this.container ? this.container.clientHeight : 600;
+    const radius = 0.98;
+    const k = Math.tan((this.camera.fov * Math.PI / 180) / 2);
+    let lo = 0, hi = Math.PI / 2;
+    for (let i = 0; i < 20; i++) {
+      const mid = (lo + hi) / 2;
+      if (k * (dist - radius * Math.cos(mid)) - radius * Math.sin(mid) > 0) lo = mid;
+      else hi = mid;
+    }
+    const capDeg = Math.max(0.05, ((lo + hi) / 2) * 180 / Math.PI);
+    return (h / 2) / capDeg;
   }
 
   destroy() {

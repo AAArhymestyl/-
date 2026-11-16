@@ -27,7 +27,7 @@
   }
 
   // 全站缓存版本号：发布时同时改这里、map.js 的 ASSET_V、index.html 的 ?v=
-  const ASSET_V = "60";
+  const ASSET_V = "61";
   
   const routes = {
     "/login": renderLogin,
@@ -2717,7 +2717,7 @@
       broadcasts: [],
       rosterVersion: 0,
       bag: [],
-      cards: { version: 1, renames: {}, overrides: {}, added: {}, removed: {}, holdings: {} },
+      cards: { version: 1, renames: {}, overrides: {}, added: {}, removed: {}, holdings: {}, customNodes: [] },
       forum: [],
       friends: [],
       council: [],
@@ -2739,7 +2739,7 @@
   // 卡牌状态与背包迁移：补齐卡牌容器、移除旧版占位道具（含已装备标记）
   function ensureCardsState(s) {
     if (!s.cards || typeof s.cards !== "object") {
-      s.cards = { version: 1, renames: {}, overrides: {}, added: {}, removed: {}, holdings: {} };
+      s.cards = { version: 1, renames: {}, overrides: {}, added: {}, removed: {}, holdings: {}, customNodes: [] };
     }
     const c = s.cards;
     c.version = 1;
@@ -2748,6 +2748,8 @@
     c.added = c.added || {};
     c.removed = c.removed || {};
     c.holdings = c.holdings || {};
+    // 管理者新建的卡池 / 分类（挂在现有分类下，随 world_state.cards 一起同步）
+    c.customNodes = Array.isArray(c.customNodes) ? c.customNodes : [];
 
     // 卡牌 id 迁移（v2）：旧数据是池内自增 c1..cN，跨池重复；
     // 新数据统一为 "<池id>-cN"，这里把历史键一次性重映射，保留持有量与编辑覆盖。
@@ -3630,7 +3632,38 @@
     return (window.SDJ_CARDS && window.SDJ_CARDS.trees) ? window.SDJ_CARDS : { trees: { player: [], contractor: [] } };
   }
   function cardRoleTree(role) {
-    return cardData().trees[role === "contractor" ? "contractor" : "player"] || [];
+    const key = role === "contractor" ? "contractor" : "player";
+    const base = cardData().trees[key] || [];
+    const custom = cardCustomNodes().filter(n => (n.roles || []).includes(key));
+    if (!custom.length) return base;
+    // 只在内存里把管理者新建的卡池挂到对应分类下，原始清单保持不动
+    const byId = new Map();
+    const clone = (n) => {
+      const copy = Object.assign({}, n);
+      if (n.children) copy.children = n.children.map(clone);
+      byId.set(copy.id, copy);
+      return copy;
+    };
+    const roots = base.map(clone);
+    custom.forEach(n => {
+      const pool = { type: "pool", id: n.id, name: n.name, period: n.period || "", cards: [] };
+      const parent = n.parentId ? byId.get(n.parentId) : null;
+      if (parent && parent.type === "group") {
+        parent.children = parent.children || [];
+        parent.children.push(pool);
+      } else {
+        roots.push(pool);
+      }
+      byId.set(pool.id, pool);
+    });
+    return roots;
+  }
+  function cardCustomNodes() {
+    const cs = loadState().cards || {};
+    return Array.isArray(cs.customNodes) ? cs.customNodes : [];
+  }
+  function cardIsCustomNode(id) {
+    return cardCustomNodes().some(n => n.id === id);
   }
   function cardRoleOfView() {
     return viewRole === "contractor" ? "contractor" : "player";
@@ -3821,8 +3854,11 @@
     if (!current) {
       panel.innerHTML = `
         <div class="card-view-head">
-          <div class="card-view-title">${role === "contractor" ? "契约者卡池" : "玩家卡池"}</div>
-          <div class="card-view-sub">共 ${cardNodeCount({ type: "group", children: tree })} 张卡牌 · 点击分类查看</div>
+          <div>
+            <div class="card-view-title">${role === "contractor" ? "契约者卡池" : "玩家卡池"}</div>
+            <div class="card-view-sub">共 ${cardNodeCount({ type: "group", children: tree })} 张卡牌 · 点击分类查看</div>
+          </div>
+          ${isAdmin ? `<button class="btn-sm" data-newpool="root">＋ 新增卡池</button>` : ""}
         </div>
         ${crumb}
         <div class="card-node-grid">${tree.map(n => cardFolderHTML(n, isAdmin)).join("")}</div>`;
@@ -3834,8 +3870,11 @@
       const children = current.children || [];
       panel.innerHTML = `
         <div class="card-view-head">
-          <div class="card-view-title">${escHTML(cardNodeName(current))}</div>
-          <div class="card-view-sub">共 ${cardNodeCount(current)} 张卡牌</div>
+          <div>
+            <div class="card-view-title">${escHTML(cardNodeName(current))}</div>
+            <div class="card-view-sub">共 ${cardNodeCount(current)} 张卡牌</div>
+          </div>
+          ${isAdmin ? `<button class="btn-sm" data-newpool="${escHTML(current.id)}">＋ 新增卡池</button>` : ""}
         </div>
         ${crumb}
         <div class="card-node-grid">${children.map(n => cardFolderHTML(n, isAdmin)).join("")}</div>`;
@@ -3849,8 +3888,11 @@
   function cardFolderHTML(node, isAdmin) {
     const period = node.period ? `<span class="period-chip">${escHTML(node.period)}</span>` : "";
     const edit = isAdmin ? `<button class="node-edit" data-rename="${node.id}" title="重命名">✎</button>` : "";
+    // 管理者新建的卡池允许删除；内置分类 / 卡池不提供删除，避免误删整份清单
+    const del = isAdmin && cardIsCustomNode(node.id)
+      ? `<button class="node-del" data-delpool="${node.id}" title="删除卡池">✕</button>` : "";
     return `<div class="card-node panel-cut" data-open="${node.id}">
-      <div class="node-top"><span class="node-icon">${node.type === "pool" ? "▤" : "▣"}</span>${edit}</div>
+      <div class="node-top"><span class="node-icon">${node.type === "pool" ? "▤" : "▣"}</span>${del}${edit}</div>
       <div class="node-title">${period}${escHTML(cardNodeName(node))}</div>
       <div class="node-meta">共 ${cardNodeCount(node)} 张</div>
     </div>`;
@@ -3868,6 +3910,19 @@
       btn.onclick = (e) => {
         e.stopPropagation();
         openNodeRename(cardNodeById(btn.dataset.rename), container);
+      };
+    });
+    panel.querySelectorAll("[data-delpool]").forEach(btn => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        openPoolDelete(cardNodeById(btn.dataset.delpool), container);
+      };
+    });
+    panel.querySelectorAll("[data-newpool]").forEach(btn => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const parentId = btn.dataset.newpool;
+        openPoolCreate(parentId === "root" ? null : cardNodeById(parentId), role, container);
       };
     });
     panel.querySelectorAll("[data-crumb]").forEach(btn => {
@@ -3980,6 +4035,93 @@
         ${isAdmin && !c.desc ? `<span class="card-missing">待补充</span>` : ""}
       </div>
     </div>`;
+  }
+
+  /* ---------------- 管理者：新增 / 删除卡池 ---------------- */
+  function openPoolCreate(parent, role, container) {
+    if (!cardsWriteAllowed()) return denyCardsWrite();
+    const overlay = el("div", { class: "modal-overlay" });
+    const panel = el("div", { class: "modal-panel panel-cut" });
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+    requestAnimationFrame(() => overlay.classList.add("show"));
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+    const parentName = parent ? cardNodeName(parent) : "根目录（分类列表顶层）";
+    panel.innerHTML = `
+      <div class="modal-title">新增卡池</div>
+      <div class="modal-desc">新建后可在该卡池下按现有规则增删卡牌，保存后实时同步到玩家 / 契约者界面。</div>
+      <label class="modal-label">卡池名称<input class="input-line" id="pcName" maxlength="30" placeholder="例如：夏日限定卡池"></label>
+      <label class="modal-label">期次标签（选填）<input class="input-line" id="pcPeriod" maxlength="12" placeholder="例如：2026 夏"></label>
+      <div class="modal-label">所属分类<div class="ce-sub">${escHTML(parentName)}</div></div>
+      <div class="modal-label">适用身份
+        <div class="ce-sub" style="display:flex;gap:16px;margin-top:6px">
+          <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="pcRolePlayer" ${role === "player" ? "checked" : ""}> 玩家卡池</label>
+          <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="pcRoleContractor" ${role === "contractor" ? "checked" : ""}> 契约者卡池</label>
+        </div>
+        <div class="ce-sub">勾选两个身份时，同一卡池同时出现在两端；若该分类在另一身份中不存在，会自动挂到对方根目录。</div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-sm" id="pcSave">创建卡池</button>
+        <button class="btn-sm ghost" data-close>取消</button>
+      </div>`;
+    panel.querySelector("[data-close]").onclick = () => overlay.remove();
+    panel.querySelector("#pcSave").onclick = async () => {
+      const name = panel.querySelector("#pcName").value.trim();
+      const period = panel.querySelector("#pcPeriod").value.trim();
+      const roles = [];
+      if (panel.querySelector("#pcRolePlayer").checked) roles.push("player");
+      if (panel.querySelector("#pcRoleContractor").checked) roles.push("contractor");
+      if (!name) { toast("请填写卡池名称"); return; }
+      if (!roles.length) { toast("请至少选择一个适用身份"); return; }
+      const cs = loadState().cards;
+      const id = "cp_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+      cs.customNodes.push({
+        id, name, period, roles,
+        parentId: parent ? parent.id : "",
+        createdAt: Date.now()
+      });
+      pushSystemActivity(`管理者在「${parentName}」下新增卡池「${name}」`, "card");
+      const ok = await persistCardsNow();
+      if (!ok) return;
+      overlay.remove();
+      renderBagPage(container);
+      toast(`已新增卡池「${name}」`);
+    };
+  }
+
+  function openPoolDelete(node, container) {
+    if (!node || !cardsWriteAllowed()) return denyCardsWrite();
+    const overlay = el("div", { class: "modal-overlay" });
+    const panel = el("div", { class: "modal-panel panel-cut" });
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+    requestAnimationFrame(() => overlay.classList.add("show"));
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+    panel.innerHTML = `
+      <div class="modal-title">删除卡池</div>
+      <div class="modal-desc">确定删除「${escHTML(cardNodeName(node))}」？卡池内的卡牌与持有记录会一起从玩家 / 契约者界面移除。</div>
+      <div class="modal-actions">
+        <button class="btn-sm danger" id="pdConfirm">确认删除</button>
+        <button class="btn-sm ghost" data-close>取消</button>
+      </div>`;
+    panel.querySelector("[data-close]").onclick = () => overlay.remove();
+    panel.querySelector("#pdConfirm").onclick = async () => {
+      const cs = loadState().cards;
+      cs.customNodes = (cs.customNodes || []).filter(n => n.id !== node.id);
+      delete cs.added[node.id];
+      delete cs.renames[node.id];
+      Object.keys(cs.holdings || {}).forEach(u => {
+        const bag = cs.holdings[u] || {};
+        Object.keys(bag).forEach(k => { if (k.startsWith(node.id + "::")) delete bag[k]; });
+      });
+      pushSystemActivity(`管理者删除卡池「${cardNodeName(node)}」`, "card");
+      const ok = await persistCardsNow();
+      if (!ok) return;
+      overlay.remove();
+      if (cardPath.includes(node.id)) cardPath = [];
+      renderBagPage(container);
+      toast(`已删除卡池「${cardNodeName(node)}」`);
+    };
   }
 
   /* ---------------- 卡牌详情 ---------------- */
@@ -4219,7 +4361,7 @@
     reset: () => {
       if (!cardsWriteAllowed()) return denyCardsWrite();
       const s = loadState();
-      s.cards = { version: 1, renames: {}, overrides: {}, added: {}, removed: {}, holdings: {} };
+      s.cards = { version: 1, renames: {}, overrides: {}, added: {}, removed: {}, holdings: {}, customNodes: [] };
       saveState();
       return true;
     },
