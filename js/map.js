@@ -7,7 +7,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 // 静态 import 必须写字面量：发布时与 app.js 的 ASSET_V、index.html 的 ?v= 同步递增
-import { SEED_LOCATIONS, AREA_LABELS } from "./locations.js?v=61";
+import { SEED_LOCATIONS, AREA_LABELS } from "./locations.js?v=62";
 
 const MAP_STORE_KEY = "sdj_map_data_v2";
 
@@ -25,7 +25,13 @@ const MARKER_RADIUS = 0.9842;
 
 // 已完成列表里的委托（成功 / 失败 / 截止）视为关闭态，地图上不再显示任何标记
 const MISSION_CLOSED = new Set(["done", "failed", "expired"]);
-const isMissionOpen = (m) => !!m && !MISSION_CLOSED.has(m.status);
+const isMissionOpen = (m) => {
+  if (!m || MISSION_CLOSED.has(m.status)) return false;
+  // 已过截止时间但尚未被定时清扫的委托，同样按关闭处理
+  const endsAt = m.deadline && m.deadline.endsAt;
+  if (endsAt && endsAt < Date.now()) return false;
+  return true;
+};
 
 /* 三块大陆：一块已探索（A / B 区所在地），两块未探索 */
 const CONTINENT_SEEDS = [
