@@ -280,6 +280,7 @@ begin
     raise exception '只有裁判可以开始对局';
   end if;
   if v_match.status <> 'waiting' then raise exception '对局已经开始'; end if;
+  if v_match.referee is null then raise exception '请先确认裁判'; end if;
 
   v_a_count := jsonb_array_length(coalesce(v_match.teams->'A', '[]'::jsonb));
   v_b_count := jsonb_array_length(coalesce(v_match.teams->'B', '[]'::jsonb));
@@ -368,6 +369,33 @@ begin
   values (p_match, p_team, p_kind, p_payload, now())
   on conflict (match_id, team, kind)
   do update set payload = excluded.payload, updated_at = now();
+
+  -- 单方提交后立刻公开「该队已提交」，对手只能看到状态，看不到内容
+  if p_kind = 'loadout' then
+    update public.pvp_matches
+       set public_state = coalesce(public_state, '{}'::jsonb) || jsonb_build_object(
+             'loadoutsSubmitted',
+             coalesce(public_state->'loadoutsSubmitted', '{}'::jsonb) || jsonb_build_object(p_team, true)
+           ),
+           updated_at = now()
+     where id = p_match;
+  elsif p_kind = 'ban' then
+    update public.pvp_matches
+       set public_state = coalesce(public_state, '{}'::jsonb) || jsonb_build_object(
+             'bansSubmitted',
+             coalesce(public_state->'bansSubmitted', '{}'::jsonb) || jsonb_build_object(p_team, true)
+           ),
+           updated_at = now()
+     where id = p_match;
+  elsif p_kind = 'dice' then
+    update public.pvp_matches
+       set public_state = coalesce(public_state, '{}'::jsonb) || jsonb_build_object(
+             'dice',
+             coalesce(public_state->'dice', '{}'::jsonb) || jsonb_build_object(p_team, v_value)
+           ),
+           updated_at = now()
+     where id = p_match;
+  end if;
 
   select count(*) >= 2 into v_done
     from public.pvp_match_secrets
@@ -709,6 +737,10 @@ begin
 
   select * into v_match from public.pvp_matches where id = v_inv.match_id for update;
   if not found then raise exception '对局不存在'; end if;
+  if v_match.status <> 'waiting' then
+    update public.pvp_invites set status = 'expired' where id = p_invite;
+    raise exception '对局已经开始，邀请已失效';
+  end if;
 
   if not p_accept then
     update public.pvp_invites set status = 'rejected' where id = p_invite;

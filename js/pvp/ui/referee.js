@@ -888,6 +888,11 @@
       match.authority = "cloud";
       if (matchData.name && !match.name) match.name = matchData.name;
       if (matchData.teamRooms && (!match.teamRooms || !match.teamRooms.A)) match.teamRooms = matchData.teamRooms;
+      if (lobbyLink && match.teamRooms) {
+        try {
+          lobbyLink.send({ type: "rooms_update", id: match.id, teamRooms: match.teamRooms, at: Date.now() });
+        } catch (e) { /* ignore */ }
+      }
       draft = emptyDraft();
       saveDraft();
       saveMatch();

@@ -130,7 +130,7 @@
       seenRows[row.id] = true;
       const mr = await AUTH.get(row.match_id);
       if (!mr.ok) continue;
-      const m = AUTH.toLocal(mr.match);
+      const m = AUTH.toLocal(mr.match, loadLobby().matches[row.match_id]);
       showInvite({
         id: "cloud_" + row.id,
         cloudId: row.id,
@@ -245,14 +245,14 @@
     if (invite.cloudId && AUTH) {
       const r = await AUTH.respond(invite.cloudId, true);
       if (!r.ok) {
-        toast("加入失败：" + (r.error || "云端不可用"));
+        toast(r.error || "云端不可用");
         return false;
       }
       if (!r.accepted || !r.match) {
         toast("邀请已失效");
         return false;
       }
-      const m = AUTH.toLocal(r.match);
+      const m = AUTH.toLocal(r.match, loadLobby().matches[r.match.id]);
       broadcastMatch(m);
       respond(invite, true, m);
       toast("已加入对局");

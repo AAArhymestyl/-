@@ -173,6 +173,15 @@
       else if ((view.name === "waiting" || view.name === "pregame") && msg.match.id === view.matchId) render();
       return;
     }
+    if (msg.type === "rooms_update") {
+      const current = getMatch(msg.id);
+      if (current && msg.teamRooms) {
+        current.teamRooms = msg.teamRooms;
+        mergeMatch(current);
+        if (view.matchId === msg.id && (view.name === "pregame" || view.name === "waiting")) render();
+      }
+      return;
+    }
     if (msg.type === "match_remove") {
       const data = loadLobby();
       delete data.matches[msg.id];
