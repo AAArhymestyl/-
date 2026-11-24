@@ -7,6 +7,8 @@ js/pvp/
 │   └── rank.js        # 段位、胜点、晋升献祭、计划点、碎卡、回滚、赛季统计
 ├── channels/
 │   └── team.js        # A/B 队内频道：Supabase Broadcast / BroadcastChannel / localStorage
+├── cloud/
+│   └── authority.js   # 云端权威适配：RPC、Realtime、观战快照、本地降级
 ├── config/
 │   └── training-config.js  # 本月公告、规则表、当天对局规则（本机 + 云端 settings.pvpConfig）
 ├── ui/
@@ -24,7 +26,9 @@ js/pvp/
 
 ## 数据与存储
 
-- 对局大厅：`localStorage.sdj_pvp_lobby_v1`，通过 `lobby-main` 频道实时广播。
+- 云端权威：`pvp_matches`（公开状态）、`pvp_match_secrets`（编成/禁牌/引擎，RLS 限制）、`pvp_invites`（邀请）、`pvp_actions`（流水）；迁移见 `supabase/pvp_authority_v1.sql`。
+- 所有写入走 `security definer` RPC；前端只读公开表，观战订阅 `pvp_matches` 的 Postgres Changes。
+- 对局大厅：`localStorage.sdj_pvp_lobby_v1`，通过 `lobby-main` 频道实时广播；云端可用时自动合并 `pvp_matches`。
 - 当前裁判对局：`localStorage.sdj_pvp_match_v1`，由 `referee.js` 读取。
 - 训练场完成前置阶段后，会把引擎快照写入大厅对局的 `engine` 字段；裁判台可跨设备「接管对局」。
 - 段位/锁/保护/审计：`state.pvp`（本地），计划点进入 `state.wallets`，碎卡/献祭扣减 `state.cards.holdings`。
@@ -49,10 +53,12 @@ js/pvp/
 
 - `tests/pvp/engine-regression.js`：引擎 P1–P51
 - `tests/pvp/rank-regression.js`：段位/经济 K1–K39
-- `tests/run.html`：完整回归 + PVP/TP 界面烟测（TP1–TP16：入口、权限、大厅、创建、裁判前置、配置云字段、邀请总线、裁判台接管）
+- `tests/run.html`：完整回归 + PVP/TP 界面烟测（TP1–TP20：入口、权限、大厅、创建、裁判前置、配置云字段、邀请总线、裁判台接管、云端适配层、本地降级）
 
 ## 边界
 
-- 大厅/邀请为实时广播 + 本地快照，未建服务端权威表；离线或跨设备需要 Supabase Realtime Broadcast。
-- 编成/ban 在 UI 层暗牌，前端数据仍可被同浏览器调试读取；服务端权威隐藏留待后端迁移。
-- 观战为训练场内的状态页；队伍频道码是入场凭证，不要公开分享。
+- `SDJPvpAuthority.available()` 会自动探测云端表：未迁移/未登录/`?local=1` 时退回纯本地模式。
+- 云端对局由服务端校验成员、角色、人数、阶段与截止时间；编成/禁牌存在 secrets 表，敌方玩家读不到。
+- 正式对局引擎仍由裁判浏览器构建（`pvp_engine_data` 提供双方暗牌），构建后通过 `pvp_engine_publish` 回存。
+- 观战页订阅 `pvp_matches.public_state`，只显示血量、回合、状态、公开日志与已公开禁牌。
+- 队伍频道码是入场凭证，不要公开分享。

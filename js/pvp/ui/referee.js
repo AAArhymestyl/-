@@ -7,6 +7,7 @@
 
   const E = global.SDJPvpEngine;
   const R = global.SDJPvpRank;
+  const AUTH = global.SDJPvpAuthority;
   const STORE_KEY = "sdj_pvp_match_v1";
   const DRAFT_KEY = "sdj_pvp_draft_v1";
   const TEAM_ROOM_KEY = "sdj_pvp_team_room";
@@ -22,6 +23,9 @@
   let teamPartnerSelection = null;
   let teamSelection = { uid: "", abilityIds: [], hidden: false, confirmNarrative: false };
   let lobbyLink = null;
+  let cloudLobbyLink = null;
+  let cloudRefreshTimer = null;
+  let cloudPublishTimer = null;
   const lobbyMatches = {};
 
   /* ---------------- DOM 工具 ---------------- */
@@ -163,6 +167,35 @@
   function saveMatch() {
     if (!match) return;
     try { localStorage.setItem(STORE_KEY, E.serialize(match)); } catch (e) { /* ignore */ }
+    scheduleCloudPublish();
+  }
+
+  function publicStateOf(m) {
+    const bans = { A: [], B: [] };
+    (m.bans || []).forEach(function (b) {
+      if (b && bans[b.side]) bans[b.side].push({ uid: b.uid, name: b.name });
+    });
+    return {
+      phase: m.phase,
+      round: Number(m.round) || 0,
+      turnSide: m.turn ? m.turn.side : null,
+      hp: { A: m.teams.A.hp, B: m.teams.B.hp },
+      statuses: { A: m.teams.A.statuses, B: m.teams.B.statuses },
+      log: (m.log || []).slice(-20).map(function (l) { return l.text; }),
+      winner: m.winner || null,
+      revealBans: true,
+      bans: bans
+    };
+  }
+
+  function scheduleCloudPublish() {
+    if (!AUTH || !match || match.phase !== "battle" || match.authority !== "cloud") return;
+    if (cloudPublishTimer) clearTimeout(cloudPublishTimer);
+    cloudPublishTimer = setTimeout(function () {
+      cloudPublishTimer = null;
+      if (!match || match.phase !== "battle" || match.authority !== "cloud") return;
+      AUTH.publish(match.id, publicStateOf(match)).catch(function () { /* ignore */ });
+    }, 400);
   }
 
   function emptyDraft() {
@@ -746,12 +779,44 @@
     try {
       lobbyLink = await global.SDJPvpTeam.connect("lobby-main", function (msg) {
         if (!msg || msg.type !== "match_update" || !msg.match) return;
-        if (msg.match.status !== "playing" || !msg.match.engine) return;
-        lobbyMatches[msg.match.id] = msg.match;
+        if (msg.match.status !== "playing") return;
+        lobbyMatches[msg.match.id] = Object.assign({}, lobbyMatches[msg.match.id] || {}, msg.match);
         if (rootEl && rootEl.isConnected && !match) renderSetup();
       });
       lobbyLink.send({ type: "lobby_sync_request", at: Date.now() });
     } catch (e) { /* ignore */ }
+    if (AUTH && AUTH.available) {
+      AUTH.available().then(function (ok) {
+        if (!ok) return;
+        AUTH.watchLobby(function () {
+          if (cloudRefreshTimer) clearTimeout(cloudRefreshTimer);
+          cloudRefreshTimer = setTimeout(refreshCloudLobby, 300);
+        }).then(function (handle) { cloudLobbyLink = handle; }).catch(function () { /* ignore */ });
+        refreshCloudLobby();
+      });
+    }
+  }
+
+  async function refreshCloudLobby() {
+    if (!AUTH) return;
+    const r = await AUTH.list(null);
+    if (!r.ok) return;
+    (r.data || []).forEach(function (server) {
+      if (server.status !== "playing" || server.phase !== "battle") return;
+      const prev = lobbyMatches[server.id] || {};
+      lobbyMatches[server.id] = {
+        id: server.id,
+        name: server.name,
+        mode: server.mode,
+        status: server.status,
+        phase: server.phase,
+        teams: server.teams,
+        engine: prev.engine || null,
+        teamRooms: prev.teamRooms || null,
+        authority: "cloud"
+      };
+    });
+    if (rootEl && rootEl.isConnected && !match) renderSetup();
   }
 
   function requestLobbySync() {
@@ -759,10 +824,70 @@
     try { lobbyLink.send({ type: "lobby_sync_request", at: Date.now() }); } catch (e) { /* ignore */ }
   }
 
-  function takeoverMatch(matchData) {
-    if (!matchData || !matchData.engine) return flash("该对局没有可接管的引擎快照");
+  function playerName(data, side, role) {
+    const list = (data && data.match && data.match.teams && data.match.teams[side]) || [];
+    const p = list.find(function (x) { return x.role === role; });
+    return p ? (p.name || p.username) : (role === "player" ? "玩家" : "契约者");
+  }
+
+  function buildEngineFromCloud(data, matchData) {
+    const md = data.match || {};
+    const em = E.createMatch({
+      mode: md.mode || matchData.mode,
+      teams: {
+        A: { label: "A 队", player: playerName(data, "A", "player"), contractor: playerName(data, "A", "contractor") },
+        B: { label: "B 队", player: playerName(data, "B", "player"), contractor: playerName(data, "B", "contractor") }
+      }
+    });
+    em.phase = "ban";
+    em.order.first = data.first === "B" ? "B" : "A";
+    em.order.second = em.order.first === "A" ? "B" : "A";
+    const bans = [];
+    ["A", "B"].forEach(function (side) {
+      const list = (data.bans && data.bans[side]) || [];
+      list.forEach(function (c) {
+        bans.push({ side: side, uid: cardUid(c), name: c.name || "", by: side });
+      });
+    });
+    E.submitBans(em, bans);
+    const loadout = function (side) {
+      const l = (data.loadouts && data.loadouts[side]) || {};
+      return {
+        player: (l.player || []).map(toEngineCard),
+        contractor: (l.contractor || []).map(toEngineCard)
+      };
+    };
+    E.submitLoadouts(em, { A: loadout("A"), B: loadout("B") });
+    const room = function (side) {
+      if (matchData.teamRooms && matchData.teamRooms[side]) return matchData.teamRooms[side];
+      return global.SDJPvpTeam ? global.SDJPvpTeam.makeRoom(em.id, side) : (em.id + "-" + side);
+    };
+    em.teamRooms = { A: room("A"), B: room("B") };
+    em.teamSelections = { A: { player: null, contractor: null }, B: { player: null, contractor: null } };
+    em.teamChat = { A: [], B: [] };
+    em.name = matchData.name || md.name || "";
+    return em;
+  }
+
+  async function takeoverMatch(matchData) {
+    if (!matchData) return flash("对局不存在");
     try {
-      match = E.deserialize(matchData.engine);
+      let engine = matchData.engine || null;
+      if (!engine && AUTH) {
+        const got = await AUTH.engineGet(matchData.id);
+        if (got.ok) engine = got.engine;
+      }
+      if (!engine && AUTH) {
+        const data = await AUTH.engineData(matchData.id);
+        if (!data.ok) return flash("接管失败：" + (data.error || "引擎快照尚未生成"));
+        engine = buildEngineFromCloud(data.data, matchData);
+        await AUTH.enginePut(matchData.id, engine);
+      }
+      if (!engine) return flash("该对局没有可接管的引擎快照");
+      match = E.deserialize(engine);
+      match.authority = "cloud";
+      if (matchData.name && !match.name) match.name = matchData.name;
+      if (matchData.teamRooms && (!match.teamRooms || !match.teamRooms.A)) match.teamRooms = matchData.teamRooms;
       draft = emptyDraft();
       saveDraft();
       saveMatch();
@@ -777,15 +902,15 @@
 
   function renderLobbyTakeover() {
     const list = Object.keys(lobbyMatches).map(function (id) { return lobbyMatches[id]; })
-      .filter(function (m) { return m && m.engine && m.status === "playing"; });
+      .filter(function (m) { return m && m.phase === "battle" && (m.engine || m.authority === "cloud"); });
     if (!list.length) return null;
     return h("div", { class: "pvp-card" },
       h("div", { class: "pvp-card-title" }, "训练场待接管对局"),
-      h("div", { class: "pvp-note" }, "训练场已完成投骰/编成/禁牌并开始的对局会出现在这里；点击接管后即可在本裁判台推进。"),
+      h("div", { class: "pvp-note" }, "训练场已完成投骰/编成/禁牌并开始的对局会出现在这里；云端对局会在接管时自动生成引擎。"),
       list.map(function (m) {
         return h("div", { class: "pvp-inline", style: "justify-content:space-between;margin-top:8px" },
           h("span", null, (m.name || m.id) + " · " + (m.mode === "casual" ? "娱乐赛" : "排位赛") + " · " + ((m.teams.A || []).length + (m.teams.B || []).length) + "/4"),
-          h("button", { class: "pvp-btn primary", onclick: function () { takeoverMatch(m); } }, "接管对局")
+          h("button", { class: "pvp-btn primary", onclick: function () { takeoverMatch(m); } }, m.engine ? "接管对局" : "接管并生成引擎")
         );
       })
     );
@@ -1875,6 +2000,12 @@
       try { lobbyLink.close(); } catch (e) { /* ignore */ }
       lobbyLink = null;
     }
+    if (cloudLobbyLink) {
+      try { cloudLobbyLink.close(); } catch (e) { /* ignore */ }
+      cloudLobbyLink = null;
+    }
+    if (cloudRefreshTimer) { clearTimeout(cloudRefreshTimer); cloudRefreshTimer = null; }
+    if (cloudPublishTimer) { clearTimeout(cloudPublishTimer); cloudPublishTimer = null; }
     ["A", "B"].forEach(function (side) {
       if (teamLinks[side]) {
         try { teamLinks[side].close(); } catch (e) { /* ignore */ }

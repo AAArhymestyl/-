@@ -458,7 +458,7 @@
 
   // 订阅某张表的变更，返回 Promise<handle>
   // 断线/心跳超时/JWT 过期时自动退避重连，避免长时间挂着页面后彻底收不到推送
-  function watch(table, onChange) {
+  function watch(table, onChange, filter) {
     if (!enabled()) return Promise.resolve(null);
     let closed = false;
     let attempt = 0;
@@ -486,8 +486,10 @@
       const connect = () => {
         if (closed) return;
         attempt += 1;
+        const changeFilter = { event: "*", schema: "public", table };
+        if (filter) changeFilter.filter = filter;
         channel = c.channel(`sdj-${table}-${Date.now()}-${attempt}`)
-          .on("postgres_changes", { event: "*", schema: "public", table }, fire)
+          .on("postgres_changes", changeFilter, fire)
           .subscribe((status) => {
             if (closed) return;
             if (status === "SUBSCRIBED") { attempt = 0; return; }
@@ -550,6 +552,21 @@
       const { data, error } = await withTimeout(c.rpc(name, params || {}), RPC_TIMEOUT_MS);
       if (error) return { ok: false, error: translate(error.message) };
       return Object.assign({ ok: true }, data || {});
+    } catch (e) {
+      return { ok: false, error: translate(e.message || String(e)) };
+    }
+  }
+
+  // 通用只读查询：build 接收 supabase query builder，返回改造后的 builder
+  async function selectRows(table, build) {
+    if (!enabled()) return { ok: false, error: "云端未配置" };
+    try {
+      const c = await ensureClient();
+      let query = c.from(table).select("*");
+      if (typeof build === "function") query = build(query);
+      const { data, error } = await withTimeout(query, RPC_TIMEOUT_MS);
+      if (error) return { ok: false, error: translate(error.message), code: error.code };
+      return { ok: true, data: data || [] };
     } catch (e) {
       return { ok: false, error: translate(e.message || String(e)) };
     }
@@ -697,6 +714,7 @@
     adminClaim,
     signUpNoProfile,
     rpc,
+    selectRows,
     watch,
     unsubscribe,
     broadcastChannel,

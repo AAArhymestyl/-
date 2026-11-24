@@ -9,6 +9,7 @@
   const E = global.SDJPvpEngine;
   const TEAM = global.SDJPvpTeam;
   const CFG = global.SDJPvpConfig;
+  const AUTH = global.SDJPvpAuthority;
   const MODE_LABEL = { ranked: "排位赛", casual: "娱乐赛" };
   const PHASE_LABEL = {
     referee: "等待裁判", partner: "邀请搭档", opponent: "邀请对手",
@@ -22,6 +23,10 @@
   let view = { name: "home", mode: "ranked", matchId: "" };
   let timer = null;
   let inviteTimers = {};
+  let authOn = false;
+  let cloudLobbyLink = null;
+  let cloudMatchLink = null;
+  let cloudRefreshTimer = null;
 
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
@@ -91,6 +96,12 @@
   function canStart(m) {
     return !!m.referee && totalMembers(m) === 4 && roleComplete(m.teams.A) && roleComplete(m.teams.B);
   }
+  function phaseSubmitted(m, kind, team) {
+    if (kind === "loadout" && m.loadouts && m.loadouts[team]) return true;
+    if (kind === "ban" && m.bans && m.bans[team]) return true;
+    const flags = m.publicState && m.publicState[kind === "loadout" ? "loadoutsSubmitted" : "bansSubmitted"];
+    return !!(flags && flags[team]);
+  }
 
   async function startLinks() {
     if (!TEAM) return;
@@ -106,7 +117,52 @@
     if (timer) { clearInterval(timer); timer = null; }
     Object.keys(inviteTimers).forEach(function (k) { clearTimeout(inviteTimers[k]); });
     inviteTimers = {};
+    if (cloudLobbyLink) { try { cloudLobbyLink.close(); } catch (e) {} cloudLobbyLink = null; }
+    if (cloudMatchLink) { try { cloudMatchLink.close(); } catch (e) {} cloudMatchLink = null; }
+    if (cloudRefreshTimer) { clearTimeout(cloudRefreshTimer); cloudRefreshTimer = null; }
     rootEl = null;
+  }
+
+  function startCloudLobby() {
+    if (!AUTH || cloudLobbyLink || !AUTH.available) return;
+    AUTH.watchLobby(function () { scheduleCloudRefresh(); }).then(function (handle) {
+      cloudLobbyLink = handle;
+    }).catch(function () { /* ignore */ });
+    refreshCloudLobby();
+  }
+
+  function scheduleCloudRefresh() {
+    if (cloudRefreshTimer) clearTimeout(cloudRefreshTimer);
+    cloudRefreshTimer = setTimeout(refreshCloudLobby, 250);
+  }
+
+  async function refreshCloudLobby() {
+    if (!AUTH || !authOn) return;
+    const r = await AUTH.list(null);
+    if (!r.ok) return;
+    const alive = {};
+    (r.data || []).forEach(function (server) {
+      alive[server.id] = true;
+      const prev = getMatch(server.id);
+      const next = AUTH.toLocal(server, prev);
+      if (next) mergeMatch(next);
+    });
+    // 云端已结束/取消的对局从本地缓存移除，避免大厅残留
+    const data = loadLobby();
+    let changed = false;
+    Object.keys(data.matches).forEach(function (id) {
+      const m = data.matches[id];
+      if (m && m.authority === "cloud" && !alive[id]) {
+        delete data.matches[id];
+        changed = true;
+      }
+    });
+    if (changed) saveLobby(data);
+    if (view.name === "lobby") renderLobby();
+    else if ((view.name === "waiting" || view.name === "pregame" || view.name === "spectate") && view.matchId) {
+      const current = getMatch(view.matchId);
+      if (current) view.name === "spectate" ? renderSpectate() : render();
+    }
   }
 
   function onLobbyMessage(msg) {
@@ -156,6 +212,12 @@
     ctx = options || {};
     rootEl = root;
     startLinks();
+    if (AUTH && AUTH.available) {
+      AUTH.available().then(function (ok) {
+        authOn = !!ok;
+        if (authOn) startCloudLobby();
+      });
+    }
     if (!timer) timer = setInterval(tick, 1000);
     const pending = takePendingMatch();
     if (pending && openMatch(pending.id)) {
@@ -282,8 +344,8 @@
         '<div class="tp-teams">' + ["A", "B"].map(function (team) {
           const own = member.team === team || ctx.role === "admin";
           return '<div class="tp-team"><div class="tp-team-title">' + team + " 队</div>" +
-            '<div class="tp-person"><b>' + (m.loadouts[team] ? "已提交" : "未提交") + "</b></div>" +
-            (own && !m.loadouts[team] ? '<button class="tp-btn" data-act="loadout" data-team="' + team + '">选择编成</button>' : "") + "</div>";
+            '<div class="tp-person"><b>' + (phaseSubmitted(m, "loadout", team) ? "已提交" : "未提交") + "</b></div>" +
+            (own && !phaseSubmitted(m, "loadout", team) ? '<button class="tp-btn" data-act="loadout" data-team="' + team + '">选择编成</button>' : "") + "</div>";
         }).join("") + "</div></div>";
     } else if (phase === "ban") {
       body = '<div class="tp-card"><div class="tp-section-title">禁牌 · 5 分钟</div>' +
@@ -291,8 +353,8 @@
         '<div class="tp-teams">' + ["A", "B"].map(function (team) {
           const own = member.team === team || ctx.role === "admin";
           return '<div class="tp-team"><div class="tp-team-title">' + team + " 队</div>" +
-            '<div class="tp-person"><b>' + (m.bans[team] ? "已提交" : "未提交") + "</b></div>" +
-            (own && !m.bans[team] ? '<button class="tp-btn" data-act="ban" data-team="' + team + '">选择 ban</button>' : "") + "</div>";
+            '<div class="tp-person"><b>' + (phaseSubmitted(m, "ban", team) ? "已提交" : "未提交") + "</b></div>" +
+            (own && !phaseSubmitted(m, "ban", team) ? '<button class="tp-btn" data-act="ban" data-team="' + team + '">选择 ban</button>' : "") + "</div>";
         }).join("") + "</div></div>";
     } else {
       body = '<div class="tp-card"><div class="tp-section-title">正式对局已开始</div>' +
@@ -316,7 +378,67 @@
     if (view.name === "lobby") return renderLobby();
     if (view.name === "waiting") return renderWaiting();
     if (view.name === "pregame") return renderPregame();
+    if (view.name === "spectate") return renderSpectate();
     return renderHome();
+  }
+
+  async function renderSpectate() {
+    const local = getMatch(view.matchId);
+    if (!local) { view = { name: "lobby", mode: view.mode, matchId: "" }; return renderLobby(); }
+    page(head("观战 · " + local.name, "实时公开状态 · 不显示双方暗牌", topInfoButtons()) +
+      '<div class="tp-tabs"><button class="tp-btn ghost" data-act="back-lobby">返回大厅</button>' +
+      '<span class="tp-badge" id="tpSpecStatus">连接中…</span></div>' +
+      '<div class="tp-card" id="tpSpecBoard"><div class="tp-empty">正在读取公开状态…</div></div>');
+    if (!AUTH || !authOn) {
+      const board = document.getElementById("tpSpecBoard");
+      if (board) board.innerHTML = '<div class="tp-note">当前为本地模式；观战实时同步需要云端权威表。</div>';
+      return;
+    }
+    const r = await AUTH.snapshot(view.matchId);
+    if (r.ok) paintSpectate(r.match);
+    if (!cloudMatchLink) {
+      cloudMatchLink = await AUTH.watchMatch(view.matchId, async function () {
+        const s = await AUTH.snapshot(view.matchId);
+        if (s.ok) paintSpectate(s.match);
+      });
+    }
+  }
+
+  function paintSpectate(row) {
+    const board = document.getElementById("tpSpecBoard");
+    if (!board || !row) return;
+    const pub = row.public_state && typeof row.public_state === "object" ? row.public_state : {};
+    const hp = pub.hp || {};
+    const labels = { dice: "投骰子", loadout: "编成", ban: "禁牌", battle: "正式对局", done: "已结束" };
+    const teamBox = function (side) {
+      const list = (row.teams && row.teams[side]) || [];
+      const value = Math.max(0, Number(hp[side]) || 0);
+      const pct = Math.max(0, Math.min(100, value / 10 * 100));
+      return '<div class="tp-team"><div class="tp-team-title">' + side + " 队 · " + value + "/10</div>" +
+        '<div style="height:6px;background:#2a2c33;margin-bottom:8px"><div style="height:6px;width:' + pct + '%;background:#c0392b"></div></div>' +
+        (list.length ? list.map(function (p) {
+          return '<div class="tp-person"><b>' + esc(p.name || p.username) + '</b><span>' + (p.role === "player" ? "玩家" : "契约者") + "</span></div>";
+        }).join("") : '<div class="tp-empty">等待加入</div>') + "</div>";
+    };
+    const log = Array.isArray(pub.log) ? pub.log.slice(-12) : [];
+    const reveal = pub.revealBans && pub.bans && typeof pub.bans === "object";
+    const banText = reveal ? ["A", "B"].map(function (side) {
+      const list = Array.isArray(pub.bans[side]) ? pub.bans[side] : [];
+      return side + "：" + (list.map(function (c) { return c.name || c.uid; }).join("、") || "无");
+    }).join("　") : "";
+    board.innerHTML =
+      '<div class="tp-section-title">' + esc(row.name || "对局") + " · " + (row.mode === "casual" ? "娱乐赛" : "排位赛") + "</div>" +
+      '<div class="tp-teams">' + teamBox("A") + teamBox("B") + "</div>" +
+      '<div class="tp-note">阶段：' + esc(labels[row.phase] || row.phase || "—") +
+      " · 回合：" + (Number(pub.round) || 0) +
+      " · 当前行动：" + esc(pub.turnSide || "—") +
+      (pub.winner ? " · 胜者：" + esc(pub.winner) : "") + "</div>" +
+      (banText ? '<div class="tp-note">禁牌公开：' + esc(banText) + "</div>" : "") +
+      '<div class="tp-card"><div class="tp-section-title">公开战报</div>' +
+      (log.length ? '<pre class="tp-pre">' + esc(log.join("\n")) + "</pre>" : '<div class="tp-empty">暂无公开战报</div>') +
+      "</div>";
+    const status = document.getElementById("tpSpecStatus");
+    if (status) status.textContent = "实时同步中";
   }
 
   /* ---------------- 创建 / 邀请 ---------------- */
@@ -326,9 +448,23 @@
       '<div class="tp-note">当前模式：' + MODE_LABEL[view.mode] + '</div>' +
       '<div class="tp-modal-actions"><button class="tp-btn ghost" data-close>取消</button><button class="tp-btn primary" id="tpCreateOk">创建</button></div>',
       function (modal) {
-        modal.querySelector("#tpCreateOk").onclick = function () {
+        modal.querySelector("#tpCreateOk").onclick = async function () {
           const name = String(modal.querySelector("#tpName").value || "").trim();
           if (!name) return toast("请输入对局名称");
+          const btn = this;
+          if (AUTH && authOn) {
+            btn.disabled = true;
+            const r = await AUTH.create(name, view.mode);
+            btn.disabled = false;
+            if (!r.ok) return toast("创建失败：" + (r.error || "云端不可用"));
+            const m = AUTH.toLocal(r.match);
+            if (!m) return toast("创建失败：返回数据异常");
+            publishMatch(m);
+            view = { name: "waiting", mode: view.mode, matchId: m.id };
+            modal.remove();
+            renderWaiting();
+            return;
+          }
           const m = {
             id: uid("match_"), name: name, mode: view.mode, status: "waiting", phase: "referee",
             creator: { username: ctx.username, name: ctx.displayName || ctx.username, role: ctx.role },
@@ -419,6 +555,13 @@
       to: target, kind: kind, team: team, role: role, mode: m.mode,
       match: clone(m), at: Date.now(), expiresAt: Date.now() + 60000
     };
+    if (AUTH && authOn && m.authority === "cloud") {
+      const r = await AUTH.invite(m.id, target, kind, team, role);
+      if (!r.ok) return toast("邀请失败：" + (r.error || "云端不可用"));
+      invite.cloudId = r.invite_id;
+      invite.expiresAt = Date.parse(r.expires_at) || invite.expiresAt;
+      invite.authority = "cloud";
+    }
     try {
       const link = await TEAM.connect("user-" + target, function () {});
       link.send({ type: "invite", invite: invite });
@@ -446,13 +589,21 @@
   }
 
   /* ---------------- 前置阶段 ---------------- */
-  function startMatch() {
+  async function startMatch() {
     const m = getMatch(view.matchId);
     if (!m) return toast("对局不存在");
     if (m.status !== "waiting" || (m.phase !== "referee" && m.phase !== "partner" && m.phase !== "opponent")) {
       return toast("对局已经开始");
     }
     if (!canStart(m)) return toast("尚未满足开始条件");
+    if (m.authority === "cloud" && AUTH && authOn) {
+      const r = await AUTH.start(m.id);
+      if (!r.ok) return toast("开始失败：" + (r.error || "云端不可用"));
+      publishMatch(AUTH.toLocal(r.match, m));
+      view.name = "pregame";
+      renderPregame();
+      return;
+    }
     m.status = "playing";
     m.phase = "dice";
     m.dice = { A: null, B: null };
@@ -462,12 +613,22 @@
     renderPregame();
   }
 
-  function rollDice(team) {
+  async function rollDice(team) {
     const m = getMatch(view.matchId);
     if (!m || m.phase !== "dice") return;
     const member = memberOf(m, ctx.username);
     if (ctx.role !== "admin" && member.team !== team) return toast("只能代表本队投骰");
     if (m.dice[team]) return;
+    if (m.authority === "cloud" && AUTH && authOn) {
+      const r = await AUTH.phase(m.id, team, "dice", {});
+      if (!r.ok) return toast("投骰失败：" + (r.error || "云端不可用"));
+      const next = AUTH.toLocal(r.match, m);
+      if (r.value) next.dice[team] = r.value;
+      if (r.first) next.first = r.first;
+      publishMatch(next);
+      renderPregame();
+      return;
+    }
     m.dice[team] = Math.floor(Math.random() * 6) + 1;
     publishMatch(m);
     if (m.dice.A && m.dice.B) finishDice(m);
@@ -507,7 +668,7 @@
       '<div class="tp-form-2">' + selects("player", 5, playerCards) + selects("contractor", 3, contractorCards) + "</div>" +
       '<div class="tp-modal-actions"><button class="tp-btn ghost" data-close>取消</button><button class="tp-btn primary" id="tpLoadoutOk">提交编成</button></div>',
       function (modal) {
-        modal.querySelector("#tpLoadoutOk").onclick = function () {
+        modal.querySelector("#tpLoadoutOk").onclick = async function () {
           const pick = function (role) {
             return Array.prototype.map.call(modal.querySelectorAll('select[data-role="' + role + '"]'), function (s) { return s.value; });
           };
@@ -515,10 +676,22 @@
           if (new Set(p).size !== 5 || new Set(c).size !== 3) return toast("同一张卡不能重复占多个槽位");
           const byUid = {};
           playerCards.concat(contractorCards).forEach(function (card) { byUid[cardUid(card)] = withUid(card); });
-          m.loadouts[team] = {
+          const picked = {
             player: p.map(function (id) { return byUid[id]; }).filter(Boolean),
             contractor: c.map(function (id) { return byUid[id]; }).filter(Boolean)
           };
+          if (m.authority === "cloud" && AUTH && authOn) {
+            const r = await AUTH.phase(m.id, team, "loadout", picked);
+            if (!r.ok) return toast("提交编成失败：" + (r.error || "云端不可用"));
+            m.loadouts[team] = picked;
+            const next = AUTH.toLocal(r.match, m);
+            next.loadouts = m.loadouts;
+            publishMatch(next);
+            modal.remove();
+            renderPregame();
+            return;
+          }
+          m.loadouts[team] = picked;
           publishMatch(m);
           modal.remove();
           if (m.loadouts.A && m.loadouts.B) {
@@ -543,13 +716,26 @@
       '<label class="tp-field">ban 2<select class="tp-input" id="tpBan2">' + opts + '</select></label></div>' +
       '<div class="tp-modal-actions"><button class="tp-btn ghost" data-close>取消</button><button class="tp-btn primary" id="tpBanOk">提交 ban</button></div>',
       function (modal) {
-        modal.querySelector("#tpBanOk").onclick = function () {
+        modal.querySelector("#tpBanOk").onclick = async function () {
           const a = modal.querySelector("#tpBan1").value;
           const b = modal.querySelector("#tpBan2").value;
           if (!a || !b || a === b) return toast("请选择 2 张不同的卡");
           const byUid = {};
           all.forEach(function (c) { byUid[cardUid(c)] = withUid(c); });
-          m.bans[team] = [byUid[a], byUid[b]].filter(Boolean);
+          const picked = [byUid[a], byUid[b]].filter(Boolean);
+          if (m.authority === "cloud" && AUTH && authOn) {
+            const r = await AUTH.phase(m.id, team, "ban", picked);
+            if (!r.ok) return toast("提交 ban 失败：" + (r.error || "云端不可用"));
+            m.bans[team] = picked;
+            const next = AUTH.toLocal(r.match, m);
+            next.bans = m.bans;
+            publishMatch(next);
+            modal.remove();
+            if (next.phase === "battle") startBattle(next);
+            else renderPregame();
+            return;
+          }
+          m.bans[team] = picked;
           publishMatch(m);
           modal.remove();
           if (m.bans.A && m.bans.B) startBattle(m);
@@ -559,6 +745,14 @@
   }
 
   function startBattle(m) {
+    if (m.authority === "cloud") {
+      // 云端模式：双方暗牌在服务端，训练场不拼引擎；裁判接管时用 pvp_engine_data 构建
+      m.phase = "battle";
+      m.deadline = null;
+      publishMatch(m);
+      renderPregame();
+      return;
+    }
     if (!E || !m.loadouts.A || !m.loadouts.B) return toast("双方编成尚未完成");
     try {
       const nameOf = function (side, role) {
@@ -601,6 +795,7 @@
   }
 
   function autoAdvance(m) {
+    if (m.authority === "cloud") return;
     if (m.phase === "dice") {
       if (!m.dice.A) m.dice.A = Math.floor(Math.random() * 6) + 1;
       if (!m.dice.B) m.dice.B = Math.floor(Math.random() * 6) + 1;
@@ -706,6 +901,11 @@
       if (act === "open") {
         const m = getMatch(btn.dataset.id);
         if (!m) return toast("对局不存在");
+        const me = memberOf(m, ctx.username);
+        if (m.status === "playing" && !me.team && ctx.role !== "admin") {
+          view = { name: "spectate", mode: m.mode, matchId: m.id };
+          return renderSpectate();
+        }
         view = { name: m.status === "playing" ? "pregame" : "waiting", mode: m.mode, matchId: m.id };
         return render();
       }

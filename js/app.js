@@ -8523,8 +8523,9 @@
     overlay.innerHTML = `<div class="modal-panel wide social-modal">${html}</div>`;
     overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
     document.body.appendChild(overlay);
-    // .modal-overlay 默认 opacity:0，必须加 show 类才会真正显示
-    requestAnimationFrame(() => overlay.classList.add("show"));
+    // .modal-overlay 默认 opacity:0，必须加 show 类才会真正显示。
+    // 同步加类：后台标签页/低帧率环境会暂停 rAF 与定时器，异步加类会导致弹层一直不可见。
+    overlay.classList.add("show");
     if (setup) setup(overlay);
     return overlay;
   }

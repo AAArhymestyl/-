@@ -11,12 +11,17 @@
   const OPEN_KEY = "sdj_pvp_open_match_v1";
   const MODE_LABEL = { ranked: "排位赛", casual: "娱乐赛" };
   const TEAM = global.SDJPvpTeam;
+  const AUTH = global.SDJPvpAuthority;
 
   let session = null;
   let link = null;
+  let cloudLink = null;
+  let cloudTimer = null;
   let modal = null;
   let countdown = null;
   let startToken = 0;
+  let seenRows = {};
+  let shownCloudIds = {};
 
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
@@ -84,9 +89,64 @@
       try { link.close(); } catch (e) { /* ignore */ }
       link = null;
     }
+    if (cloudLink) {
+      try { cloudLink.close(); } catch (e) { /* ignore */ }
+      cloudLink = null;
+    }
+    if (cloudTimer) { clearTimeout(cloudTimer); cloudTimer = null; }
     if (countdown) { clearInterval(countdown); countdown = null; }
     if (modal) { modal.remove(); modal = null; }
+    seenRows = {};
+    shownCloudIds = {};
     session = null;
+  }
+
+  async function startCloudInvites(token) {
+    if (!AUTH || !AUTH.available) return;
+    const ok = await AUTH.available();
+    if (!ok || token !== startToken || !session) return;
+    refreshCloudInvites();
+    try {
+      const handle = await AUTH.watchInvites(session.username, function () {
+        if (cloudTimer) clearTimeout(cloudTimer);
+        cloudTimer = setTimeout(refreshCloudInvites, 300);
+      });
+      if (token !== startToken) {
+        try { handle.close(); } catch (e) { /* ignore */ }
+        return;
+      }
+      cloudLink = handle;
+    } catch (e) { /* ignore */ }
+  }
+
+  async function refreshCloudInvites() {
+    if (!AUTH || !session) return;
+    const r = await AUTH.pendingInvites(session.username);
+    if (!r.ok) return;
+    const rows = r.data || [];
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      if (seenRows[row.id]) continue;
+      seenRows[row.id] = true;
+      const mr = await AUTH.get(row.match_id);
+      if (!mr.ok) continue;
+      const m = AUTH.toLocal(mr.match);
+      showInvite({
+        id: "cloud_" + row.id,
+        cloudId: row.id,
+        authority: "cloud",
+        from: row.from_user,
+        fromName: row.from_name || row.from_user,
+        to: row.to_user,
+        kind: row.kind,
+        team: row.team,
+        role: row.role,
+        mode: m.mode,
+        match: m,
+        at: Date.parse(row.created_at) || Date.now(),
+        expiresAt: Date.parse(row.expires_at) || (Date.now() + 60000)
+      });
+    }
   }
 
   async function start(nextSession) {
@@ -109,6 +169,7 @@
     } catch (e) {
       link = null;
     }
+    startCloudInvites(token);
   }
 
   function onMessage(msg) {
@@ -118,6 +179,10 @@
 
   function showInvite(invite) {
     if (!invite || !invite.match || !session) return;
+    if (invite.cloudId) {
+      if (shownCloudIds[invite.cloudId]) return;
+      shownCloudIds[invite.cloudId] = true;
+    }
     if (Number(invite.expiresAt) && Number(invite.expiresAt) < Date.now()) return;
     if (modal) { modal.remove(); modal = null; }
     if (countdown) { clearInterval(countdown); countdown = null; }
@@ -158,21 +223,41 @@
       box.remove();
       if (modal === box) modal = null;
     };
-    box.querySelector("[data-no]").onclick = function () {
+    box.querySelector("[data-no]").onclick = async function () {
+      if (invite.cloudId && AUTH) {
+        try { await AUTH.respond(invite.cloudId, false); } catch (e) { /* ignore */ }
+      }
       respond(invite, false);
       close();
     };
-    box.querySelector("[data-yes]").onclick = function () {
-      const ok = acceptInvite(invite);
+    box.querySelector("[data-yes]").onclick = async function () {
+      const ok = await acceptInvite(invite);
       if (ok) close();
     };
   }
 
-  function acceptInvite(invite) {
+  async function acceptInvite(invite) {
     if (!invite || !invite.match) return false;
     if (Number(invite.expiresAt) && Number(invite.expiresAt) < Date.now()) {
       toast("邀请已超时");
       return false;
+    }
+    if (invite.cloudId && AUTH) {
+      const r = await AUTH.respond(invite.cloudId, true);
+      if (!r.ok) {
+        toast("加入失败：" + (r.error || "云端不可用"));
+        return false;
+      }
+      if (!r.accepted || !r.match) {
+        toast("邀请已失效");
+        return false;
+      }
+      const m = AUTH.toLocal(r.match);
+      broadcastMatch(m);
+      respond(invite, true, m);
+      toast("已加入对局");
+      openTraining(m);
+      return true;
     }
     const stored = loadLobby().matches[invite.match.id];
     const m = clone(stored || invite.match);
