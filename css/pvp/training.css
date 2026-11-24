@@ -21,6 +21,7 @@
   display: flex; justify-content: space-between; gap: 18px; align-items: flex-end;
   border-bottom: 1px solid #2a2c33; padding-bottom: 14px; margin-bottom: 18px;
 }
+.tp-back { margin-bottom: 10px; padding: 6px 11px; font-size: 10.5px; }
 .tp-kicker { font-size: 10px; letter-spacing: 3px; color: #8c8480; }
 .tp-head h2 { margin: 3px 0 2px; font-size: 24px; letter-spacing: 2px; color: #fff; font-weight: 500; }
 .tp-sub { color: #9a958e; font-size: 11px; letter-spacing: 1px; }

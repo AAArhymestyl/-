@@ -185,7 +185,9 @@
     rootEl.innerHTML = '<div class="tp-page">' + inner + "</div>";
   }
   function head(title, sub, actions) {
-    return '<div class="tp-head"><div><div class="tp-kicker">TRAINING GROUND · PVP</div><h2>' +
+    return '<div class="tp-head"><div>' +
+      '<button class="tp-btn ghost tp-back" data-act="back-main">← 返回主页面</button>' +
+      '<div class="tp-kicker">TRAINING GROUND · PVP</div><h2>' +
       esc(title) + '</h2><div class="tp-sub">' + esc(sub || "") + '</div></div>' +
       '<div class="tp-top-actions">' + (actions || "") + "</div></div>";
   }
@@ -687,6 +689,7 @@
       const btn = e.target.closest("[data-act]");
       if (!btn) return;
       const act = btn.dataset.act;
+      if (act === "back-main") { location.hash = "#/app"; return; }
       if (act === "info") return showInfo(btn.dataset.kind);
       if (act === "config") return showConfig();
       if (act === "entry") {
