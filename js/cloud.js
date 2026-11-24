@@ -516,6 +516,22 @@
     } catch (e) {}
   }
 
+  // PVP 队内频道：Supabase Realtime Broadcast（无表结构依赖）
+  async function broadcastChannel(name, onMessage) {
+    if (!enabled()) return null;
+    try {
+      const c = await ensureClient();
+      const ch = c.channel(name, { config: { broadcast: { self: false } } });
+      ch.on("broadcast", { event: "pvp_team" }, (msg) => {
+        if (msg && msg.payload) onMessage(msg.payload);
+      }).subscribe();
+      return {
+        send: (payload) => ch.send({ type: "broadcast", event: "pvp_team", payload }),
+        close: () => { try { c.removeChannel(ch); } catch (e) {} }
+      };
+    } catch (e) { return null; }
+  }
+
   // ---------------- 玩家动作 RPC（跨设备写入 world_state） ----------------
   const RPC_TIMEOUT_MS = 15000;
   function withTimeout(promise, ms) {
@@ -683,6 +699,7 @@
     rpc,
     watch,
     unsubscribe,
+    broadcastChannel,
     hasSession,
     getProfile: () => profile
   };

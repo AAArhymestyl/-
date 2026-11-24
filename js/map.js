@@ -540,6 +540,12 @@ export class GlobeMapEngine {
     document.getElementById("infoPanel").classList.add("show");
     const hint = document.getElementById("mapHint");
     if (hint) hint.classList.remove("show");
+    const trainingBtn = document.getElementById("btnTrainingPvp");
+    if (trainingBtn) {
+      const isTraining = String(data.name || "").trim() === "训练场";
+      trainingBtn.style.display = isTraining ? "" : "none";
+      trainingBtn.onclick = isTraining ? function () { location.hash = "#/training-pvp"; } : null;
+    }
     this._activeLoc = data;
     this.renderLocationMissions(data);
 

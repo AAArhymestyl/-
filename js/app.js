@@ -1,4 +1,4 @@
-﻿/* 神降计划·塔 - 应用主逻辑（路由 / 登录 / 注册 / 找回密码 / 主控台） */
+﻿﻿/* 神降计划·塔 - 应用主逻辑（路由 / 登录 / 注册 / 找回密码 / 主控台） */
 (function () {
   "use strict";
 
@@ -27,13 +27,14 @@
   }
 
   // 全站缓存版本号：发布时同时改这里、map.js 的 ASSET_V、index.html 的 ?v=
-  const ASSET_V = "62";
+  const ASSET_V = "70";
   
   const routes = {
     "/login": renderLogin,
     "/register": renderRegister,
     "/forgot-password": renderForgotPassword,
     "/app": renderMainApp,
+    "/training-pvp": renderTrainingPvpPage,
     "/forum/new": renderForumNewPage
   };
 
@@ -44,6 +45,10 @@
     if (window._cleanupMainApp) {
       window._cleanupMainApp();
       window._cleanupMainApp = null;
+    }
+    if (window._cleanupTrainingPvp) {
+      window._cleanupTrainingPvp();
+      window._cleanupTrainingPvp = null;
     }
     const path = getPath();
     const postMatch = path.match(/^\/forum\/post\/([^/]+)$/);
@@ -164,6 +169,7 @@
     forum: `<svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>`,
     friend: `<svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>`,
     council: `<svg viewBox="0 0 24 24"><path d="M12 2l-5.5 9h11L12 2zm0 3.84L14.61 9H9.39L12 5.84zm-5 8.16c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm10 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-5 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zM2 20h20v2H2v-2z"/></svg>`,
+    pvp: `<svg viewBox="0 0 24 24"><path d="M6.9 3l4.6 4.6-1.4 1.4L5.5 4.4 6.9 3zm10.2 0 1.4 1.4-4.6 4.6-1.4-1.4L17.1 3zM4 18.6 18.6 4l1.4 1.4L5.4 20 4 18.6zm16 0L5.4 4 4 5.4 18.6 20 20 18.6z"/></svg>`,
     codex: `<svg viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9h-4v4h-2v-4H9V9h4V5h2v4h4v2z"/></svg>`,
     member: `<svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>`,
     settings: `<svg viewBox="0 0 24 24"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.06-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.73,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.06,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.49-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></svg>`,
@@ -927,6 +933,7 @@
       { id: 'map', cn: '地图', en: 'MAP' },
       { id: 'bag', cn: '背包', en: 'INVENTORY' },
       { id: 'mission', cn: '委托任务', en: 'COMMISSIONS' },
+      { id: 'pvp', cn: '卡牌对战', en: 'PVP' },
       { id: 'forum', cn: '论坛', en: 'FORUM' },
       { id: 'friend', cn: '好友', en: 'FRIENDS' },
       { id: 'council', cn: '议会', en: 'COUNCIL' },
@@ -936,6 +943,7 @@
     admin: [
       { id: 'dashboard', cn: '主控台', en: 'DASHBOARD' },
       { id: 'approval', cn: '待审批', en: 'APPROVALS' },
+      { id: 'pvp', cn: '对战裁判台', en: 'PVP REFEREE' },
       { id: 'map', cn: '地图管理', en: 'MAP MGMT' },
       { id: 'mission', cn: '任务管理', en: 'MISSION MGMT' },
       { id: 'forum', cn: '论坛管理', en: 'FORUM MGMT' },
@@ -946,6 +954,16 @@
       { id: 'settings', cn: '设置', en: 'SETTINGS' }
     ]
   };
+
+  function renderTrainingPvpPage(root) {
+    const session = getSession();
+    if (!session || !session.username) { location.hash = "#/login"; return; }
+    if (!window.SDJPvpTraining) {
+      root.innerHTML = '<div style="padding:40px;color:#bbb;font:14px Microsoft YaHei">训练场 PVP 模块未加载，请检查 js/pvp/ui/training.js。</div>';
+      return;
+    }
+    window.SDJPvpTraining.render(root, Object.assign({}, session));
+  }
 
   function renderMainApp(root) {
     const session = getSession();
@@ -1170,6 +1188,7 @@
       stopForumTimers();
       stopSocial();
       stopDashboardClock();
+      if (window.SDJPvpUI && window.SDJPvpUI.destroy) window.SDJPvpUI.destroy();
       if (contentEl._cleanupPick) { contentEl._cleanupPick(); contentEl._cleanupPick = null; }
       if (globeEngine) {
         globeEngine.destroy();
@@ -1189,6 +1208,8 @@
         renderBagPage(contentEl);
       } else if (currentMenuId === "mission") {
         renderMissionPage(contentEl, viewRole === "admin");
+      } else if (currentMenuId === "pvp") {
+        renderPvpPage(contentEl, viewRole, session);
       } else if (currentMenuId === "forum") {
         renderForumPage(contentEl, viewRole === "admin");
       } else if (currentMenuId === "friend") {
@@ -2463,6 +2484,7 @@
             <div class="info-task-title">该地点的委托</div>
             <div class="info-task-desc" id="infoTaskDesc">等待管理者发布委托</div>
           </div>
+          <button class="info-btn pvp-enter" id="btnTrainingPvp" style="display:none">进入训练场 PVP</button>
           <button class="info-btn ghost" id="btnTrack">追踪该地点</button>
         </div>
       </div>
@@ -2718,6 +2740,7 @@
       rosterVersion: 0,
       bag: [],
       cards: { version: 1, renames: {}, overrides: {}, added: {}, removed: {}, holdings: {}, customNodes: [] },
+      pvp: defaultPvpState(),
       forum: [],
       friends: [],
       council: [],
@@ -2731,6 +2754,20 @@
       registerBypass: { count: 0, users: [] },
       demoScrubVersion: 0,
       settings: { sound: true, animation: true, autoLogin: false }
+    };
+  }
+
+  function defaultPvpState() {
+    return {
+      version: 1,
+      season: 1,
+      profiles: {},
+      locks: {},
+      protections: {},
+      matches: [],
+      sacrifices: [],
+      destructions: [],
+      daily: {}
     };
   }
 
@@ -2793,6 +2830,18 @@
     if (!s.registerBypass || typeof s.registerBypass !== "object") {
       s.registerBypass = { count: 0, users: [] };
       changed = true;
+    }
+    if (!s.pvp || typeof s.pvp !== "object") {
+      s.pvp = defaultPvpState();
+      changed = true;
+    } else {
+      ["profiles", "locks", "protections", "daily"].forEach(k => {
+        if (!s.pvp[k] || typeof s.pvp[k] !== "object") { s.pvp[k] = {}; changed = true; }
+      });
+      ["matches", "sacrifices", "destructions"].forEach(k => {
+        if (!Array.isArray(s.pvp[k])) { s.pvp[k] = []; changed = true; }
+      });
+      if (s.pvp.version !== 1) { s.pvp.version = 1; changed = true; }
     }
     if (s.demoScrubVersion !== 1) {
       const drop = (arr, ids, field) => (arr || []).filter(x => !ids.includes(x[field]));
@@ -4374,7 +4423,180 @@
       const host = document.getElementById("mainContent");
       if (host && currentMenuId === "bag") renderBagPage(host);
     },
+    pvpEligible: (poolId) => {
+      const n = cardNodeById(poolId);
+      return !!(n && n.type === "pool" && n.pvpEligible !== false);
+    },
+    pvpPools: (role) => {
+      const out = [];
+      const walk = (n) => {
+        if (n.type === "pool" && n.pvpEligible !== false) out.push({ id: n.id, name: cardNodeName(n), role });
+        (n.children || []).forEach(walk);
+      };
+      cardRoleTree(role).forEach(walk);
+      return out;
+    },
+    pvpCards: (role) => {
+      const out = [];
+      const walk = (n) => {
+        if (n.type === "pool" && n.pvpEligible !== false) {
+          cardEffective(n).forEach(c => out.push(Object.assign({}, c, {
+            poolId: n.id, poolName: cardNodeName(n), role
+          })));
+        }
+        (n.children || []).forEach(walk);
+      };
+      cardRoleTree(role).forEach(walk);
+      return out;
+    },
+    pvpStats: () => {
+      const player = window.SDJCards.pvpCards("player");
+      const contractor = window.SDJCards.pvpCards("contractor");
+      const count = (list) => list.reduce((m, c) => { m[c.rarity || "待定"] = (m[c.rarity || "待定"] || 0) + 1; return m; }, {});
+      return { player: player.length, contractor: contractor.length, total: player.length + contractor.length, byRarity: { player: count(player), contractor: count(contractor) } };
+    },
+    pvpIssues: () => {
+      const all = window.SDJCards.pvpCards("player").concat(window.SDJCards.pvpCards("contractor"));
+      return all.filter(c => !c.desc).map(c => ({ role: c.role, poolId: c.poolId, name: c.name }));
+    },
+    pvpTags: (poolId, cardId) => {
+      const p = cardNodeById(poolId);
+      if (!p || p.type !== "pool") return null;
+      const c = cardEffective(p).find(x => x.id === cardId);
+      return c && c.pvpTags ? c.pvpTags : null;
+    },
+    pvpTagStats: () => {
+      const out = { total: 0, manual: 0, auto: 0, missingDesc: 0, needsReview: 0, byField: {} };
+      const fields = ["bodyTarget", "bodyBuff", "buff", "shelterType", "persistent", "summon",
+        "trueDamage", "passive", "passivePersistent", "passiveUses", "passiveReplaces",
+        "ongoingEffect", "durationRounds", "stackable"];
+      const walk = (n) => {
+        if (n.type === "pool") {
+          cardEffective(n).forEach(c => {
+            out.total++;
+            const t = c.pvpTags || {};
+            if (t.tagSource === "manual") out.manual++;
+            else if (t.tagSource === "missing_desc") out.missingDesc++;
+            else if (t.tagSource === "auto") out.auto++;
+            if (t.needsReview) out.needsReview++;
+            fields.forEach(k => {
+              out.byField[k] = out.byField[k] || {};
+              const v = String(t[k]);
+              out.byField[k][v] = (out.byField[k][v] || 0) + 1;
+            });
+          });
+        }
+        (n.children || []).forEach(walk);
+      };
+      cardRoleTree("player").forEach(walk);
+      cardRoleTree("contractor").forEach(walk);
+      return out;
+    },
+    pvpTagIssues: () => {
+      const out = [];
+      const walk = (role, n) => {
+        if (n.type === "pool") {
+          cardEffective(n).forEach(c => {
+            const t = c.pvpTags;
+            if (!t || t.needsReview) out.push({
+              role, poolId: n.id, poolName: cardNodeName(n), name: c.name,
+              reason: !t ? "missing_tags" : (t.tagSource === "missing_desc" ? "missing_desc" : "review")
+            });
+          });
+        }
+        (n.children || []).forEach(ch => walk(role, ch));
+      };
+      cardRoleTree("player").forEach(n => walk("player", n));
+      cardRoleTree("contractor").forEach(n => walk("contractor", n));
+      return out;
+    },
+    pvpIR: (poolId, cardId) => {
+      const p = cardNodeById(poolId);
+      if (!p || p.type !== "pool") return null;
+      const c = cardEffective(p).find(x => x.id === cardId);
+      return c && c.pvpIR ? c.pvpIR : null;
+    },
+    pvpIRStats: () => {
+      const out = { total: 0, manual: 0, auto: 0, missingDesc: 0, needsReview: 0, narrative: 0 };
+      const walk = (n) => {
+        if (n.type === "pool") {
+          cardEffective(n).forEach(c => {
+            out.total++;
+            const ir = c.pvpIR;
+            if (!ir) { out.needsReview++; return; }
+            const src = ir.source && ir.source.review;
+            if (src === "manual") out.manual++;
+            else if (src === "missing_desc") out.missingDesc++;
+            else out.auto++;
+            if (ir.needsReview) out.needsReview++;
+            if (ir.pvp && ir.pvp.narrative) out.narrative++;
+          });
+        }
+        (n.children || []).forEach(walk);
+      };
+      cardRoleTree("player").forEach(walk);
+      cardRoleTree("contractor").forEach(walk);
+      return out;
+    },
+    pvpIRIssues: () => {
+      const out = [];
+      const walk = (role, n) => {
+        if (n.type === "pool") {
+          cardEffective(n).forEach(c => {
+            const ir = c.pvpIR;
+            if (!ir || ir.needsReview) out.push({
+              role, poolId: n.id, poolName: cardNodeName(n), name: c.name,
+              reason: !ir ? "missing_ir" : (ir.source && ir.source.review === "missing_desc" ? "missing_desc" : "review")
+            });
+          });
+        }
+        (n.children || []).forEach(ch => walk(role, ch));
+      };
+      cardRoleTree("player").forEach(n => walk("player", n));
+      cardRoleTree("contractor").forEach(n => walk("contractor", n));
+      return out;
+    },
+    isPvpCard: (poolId, cardId) => {
+      const p = cardNodeById(poolId);
+      if (!p || p.type !== "pool" || p.pvpEligible === false) return false;
+      return cardEffective(p).some(c => c.id === cardId);
+    },
     bag: () => loadState().bag || []
+  };
+
+  // P2 段位/经济与 app 状态的桥接：纯逻辑在 js/pvp-rank.js
+  window.SDJPvpState = {
+    get: () => loadState(),
+    save: () => saveState(),
+    reload: () => reloadState(),
+    wallet: (username) => myWallet(username),
+    accounts: () => getAccounts().map(a => ({ username: a.username, displayName: a.displayName || a.username, role: a.role || "player" })),
+    friends: (username) => (typeof friendsOf === "function" ? friendsOf(username) : []),
+    user: (username) => (typeof socialUser === "function" ? socialUser(username) : { username: username, name: username, role: "player" }),
+    heldCards: (username) => {
+      const out = [];
+      const walk = (role, n) => {
+        if (n.type === "pool") {
+          cardEffective(n).forEach(c => {
+            const count = cardHeld(username, n.id, c.id);
+            if (count > 0) out.push({
+              uid: cardKey(n.id, c.id),
+              id: c.id,
+              poolId: n.id,
+              poolName: cardNodeName(n),
+              role: role,
+              name: c.name,
+              rarity: c.rarity,
+              count: count
+            });
+          });
+        }
+        (n.children || []).forEach(ch => walk(role, ch));
+      };
+      cardRoleTree("player").forEach(n => walk("player", n));
+      cardRoleTree("contractor").forEach(n => walk("contractor", n));
+      return out.sort((a, b) => String(a.name).localeCompare(String(b.name), "zh"));
+    }
   };
 
 
@@ -9013,6 +9235,21 @@
     pendingMapLocation = p.location;
     pendingMenu = "map";
     navigate("/app");
+  }
+
+  function renderPvpPage(container, role, session) {
+    if (window.SDJPvpUI && typeof window.SDJPvpUI.render === "function") {
+      window.SDJPvpUI.render(container, {
+        role: role,
+        username: session && session.username,
+        displayName: session && session.displayName
+      });
+      return;
+    }
+    container.appendChild(el("div", { class: "placeholder-page panel-cut" },
+      el("div", { class: "placeholder-title" }, "对战模块未加载"),
+      el("div", { class: "placeholder-desc" }, "请确认 js/pvp-engine.js 与 js/pvp-ui.js 已正确加载。")
+    ));
   }
 
   function renderPlaceholderPage(container) {

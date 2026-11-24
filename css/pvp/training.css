@@ -1,0 +1,99 @@
+/* 地图 · 训练场入口按钮 */
+.map-info-panel .pvp-enter {
+  border-color: #d21f2a !important;
+  background: linear-gradient(180deg, #a30b14, #3a0508) !important;
+  color: #fff !important;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+
+/* 训练场 PVP · 专属界面样式 */
+.tp-page {
+  min-height: 100%;
+  padding: 22px 26px 60px;
+  background:
+    radial-gradient(900px 420px at 50% -10%, rgba(210, 31, 42, .12), transparent 70%),
+    linear-gradient(180deg, #08090b, #0b0c0e 60%, #08090b);
+  color: #e8e4df;
+  font: 13px/1.65 "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+}
+.tp-head {
+  display: flex; justify-content: space-between; gap: 18px; align-items: flex-end;
+  border-bottom: 1px solid #2a2c33; padding-bottom: 14px; margin-bottom: 18px;
+}
+.tp-kicker { font-size: 10px; letter-spacing: 3px; color: #8c8480; }
+.tp-head h2 { margin: 3px 0 2px; font-size: 24px; letter-spacing: 2px; color: #fff; font-weight: 500; }
+.tp-sub { color: #9a958e; font-size: 11px; letter-spacing: 1px; }
+.tp-top-actions { display: flex; gap: 7px; flex-wrap: wrap; }
+.tp-btn {
+  background: #17181c; border: 1px solid #3a3c44; color: #e6dfd8;
+  padding: 8px 13px; cursor: pointer; font: 11px "Microsoft YaHei", sans-serif;
+  letter-spacing: 1px; transition: .18s;
+}
+.tp-btn:hover { border-color: #d21f2a; background: #241014; }
+.tp-btn.primary { background: linear-gradient(180deg, #a30b14, #3a0508); border-color: #e04a50; color: #fff; font-weight: 600; }
+.tp-btn.ghost { background: transparent; color: #9a958e; }
+.tp-btn:disabled { opacity: .4; cursor: not-allowed; filter: grayscale(.5); }
+.tp-entries { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 26px 0; }
+.tp-entry {
+  position: relative; text-align: left; min-height: 160px; padding: 20px;
+  background: linear-gradient(160deg, #141013, #0b0c0f 70%);
+  border: 1px solid #3a2227; color: #e8e4df; cursor: pointer;
+  display: flex; flex-direction: column; justify-content: flex-end; gap: 5px;
+  transition: .2s;
+}
+.tp-entry:hover { border-color: #d21f2a; transform: translateY(-2px); box-shadow: 0 10px 26px rgba(210,31,42,.12); }
+.tp-entry b { font-size: 19px; letter-spacing: 2px; color: #fff; font-weight: 500; }
+.tp-entry span { color: #9a958e; font-size: 11px; }
+.tp-entry em { position: absolute; top: 16px; right: 16px; font: 10px Consolas, monospace; color: #6f1a20; letter-spacing: 2px; }
+.tp-entry.locked { opacity: .58; }
+.tp-note { color: #8c8480; font-size: 11px; margin: 6px 0; line-height: 1.7; }
+.tp-tabs { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.tp-badge { border: 1px solid #3a3c44; padding: 3px 8px; font-size: 10px; color: #b9b2aa; }
+.tp-section { margin-bottom: 18px; }
+.tp-section-title { display: flex; justify-content: space-between; color: #d9b382; font-size: 11px; letter-spacing: 2px; border-bottom: 1px dashed #3a2a2a; padding-bottom: 6px; margin-bottom: 8px; }
+.tp-section-title em { font-style: normal; color: #8c8480; }
+.tp-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 11px 13px; border: 1px solid #2a2c33; background: #101114; margin-bottom: 7px; }
+.tp-row b { display: block; color: #fff; font-weight: 500; letter-spacing: 1px; }
+.tp-row span { display: block; color: #8c8480; font-size: 10.5px; margin-top: 2px; }
+.tp-empty { color: #6f6a64; font-size: 11px; padding: 14px; border: 1px dashed #2a2c33; text-align: center; }
+.tp-fab { position: fixed; right: 34px; bottom: 34px; z-index: 20; background: linear-gradient(180deg, #a30b14, #3a0508); border: 1px solid #e04a50; color: #fff; padding: 13px 20px; cursor: pointer; font: 12px "Microsoft YaHei", sans-serif; letter-spacing: 1px; box-shadow: 0 10px 28px rgba(210,31,42,.25); }
+.tp-teams { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
+.tp-team { border: 1px solid #2a2c33; background: #101114; padding: 12px; }
+.tp-team-title { color: #d9b382; font-size: 10px; letter-spacing: 2px; margin-bottom: 7px; }
+.tp-person { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,.04); font-size: 11px; }
+.tp-person b { color: #e8e4df; font-weight: 500; }
+.tp-person span { color: #8c8480; }
+.tp-card { border: 1px solid #2a2c33; background: #101114; padding: 14px; margin: 12px 0; }
+.tp-steps { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.tp-step { border: 1px solid #2a2c33; padding: 6px 9px; font-size: 10.5px; color: #6f6a64; }
+.tp-step.done { border-color: rgba(85,201,122,.4); color: #55c97a; }
+.tp-step.active { border-color: #d21f2a; color: #ff8b8f; }
+.tp-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.tp-dice { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.tp-dice > div { border: 1px solid #2a2c33; padding: 12px; text-align: center; }
+.tp-dice b { display: block; color: #d9b382; font-size: 11px; }
+.tp-dice span { display: block; font: 28px Consolas, monospace; color: #fff; margin: 6px 0; }
+.tp-rooms { font: 11px Consolas, monospace; color: #b9b2aa; background: #08090b; border: 1px solid #2a2c33; padding: 9px; margin: 8px 0; word-break: break-all; }
+.tp-form-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.tp-field { display: flex; flex-direction: column; gap: 4px; font-size: 10px; color: #8c8480; margin-bottom: 8px; }
+.tp-input { width: 100%; background: #08090b; border: 1px solid #3a3c44; color: #e8e4df; font: 12px Consolas, monospace; padding: 8px 9px; outline: none; }
+.tp-input:focus { border-color: #d21f2a; }
+textarea.tp-input { min-height: 80px; resize: vertical; }
+.tp-modal, .tp-invite { position: fixed; inset: 0; z-index: 120; background: rgba(0,0,0,.72); display: flex; align-items: center; justify-content: center; padding: 20px; }
+.tp-modal-box, .tp-invite-box { width: min(560px, 100%); max-height: 86vh; overflow: auto; background: #101114; border: 1px solid #4a2027; padding: 20px; box-shadow: 0 22px 70px rgba(0,0,0,.6); }
+.tp-modal-title { color: #fff; font-size: 16px; letter-spacing: 2px; margin-bottom: 10px; }
+.tp-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.tp-pre { white-space: pre-wrap; word-break: break-word; background: #08090b; border: 1px solid #2a2c33; padding: 10px; color: #c9c2ba; font: 11px/1.7 Consolas, monospace; max-height: 50vh; overflow: auto; }
+.tp-cand { display: flex; flex-direction: column; gap: 6px; max-height: 360px; overflow: auto; }
+.tp-cand .tp-btn { display: flex; justify-content: space-between; text-align: left; }
+.tp-invite-box { width: min(430px, 100%); border-color: #d21f2a; }
+.tp-invite-time { color: #9a958e; font-size: 11px; margin: 10px 0; }
+.tp-invite-time b { color: #ff5a5f; font-family: Consolas, monospace; }
+.tp-toast { position: fixed; left: 50%; bottom: 34px; transform: translate(-50%, 14px); z-index: 200; background: #1a1012; border: 1px solid #d21f2a; color: #fff; padding: 10px 16px; font-size: 11.5px; opacity: 0; transition: .22s; max-width: 80vw; }
+.tp-toast.show { opacity: 1; transform: translate(-50%, 0); }
+@media (max-width: 900px) {
+  .tp-entries, .tp-teams, .tp-form-2, .tp-dice { grid-template-columns: 1fr; }
+  .tp-head { flex-direction: column; align-items: flex-start; }
+  .tp-page { padding: 16px 12px 70px; }
+}
