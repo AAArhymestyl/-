@@ -4571,7 +4571,7 @@
     bag: () => loadState().bag || []
   };
 
-  // P2 段位/经济与 app 状态的桥接：纯逻辑在 js/pvp-rank.js
+  // P2 段位/经济与 app 状态的桥接：纯逻辑在 js/pvp/core/rank.js
   window.SDJPvpState = {
     get: () => loadState(),
     save: () => saveState(),
@@ -9261,7 +9261,7 @@
     }
     container.appendChild(el("div", { class: "placeholder-page panel-cut" },
       el("div", { class: "placeholder-title" }, "对战模块未加载"),
-      el("div", { class: "placeholder-desc" }, "请确认 js/pvp-engine.js 与 js/pvp-ui.js 已正确加载。")
+      el("div", { class: "placeholder-desc" }, "请确认 js/pvp/core/engine.js 与 js/pvp/ui/referee.js 已正确加载。")
     ));
   }
 

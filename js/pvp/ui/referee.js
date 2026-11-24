@@ -337,7 +337,7 @@
       rootEl.appendChild(h("div", { class: "pvp-page" },
         h("div", { class: "pvp-card" },
           h("div", { class: "pvp-card-title" }, "队伍频道未加载"),
-          h("div", { class: "pvp-note" }, "请确认 js/pvp-team.js 已加载。"))
+          h("div", { class: "pvp-note" }, "请确认 js/pvp/channels/team.js 已加载。"))
       ));
       return;
     }
