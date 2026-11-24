@@ -446,7 +446,11 @@
   /* ---------------- 前置阶段 ---------------- */
   function startMatch() {
     const m = getMatch(view.matchId);
-    if (!m || !canStart(m)) return toast("尚未满足开始条件");
+    if (!m) return toast("对局不存在");
+    if (m.status !== "waiting" || (m.phase !== "referee" && m.phase !== "partner" && m.phase !== "opponent")) {
+      return toast("对局已经开始");
+    }
+    if (!canStart(m)) return toast("尚未满足开始条件");
     m.status = "playing";
     m.phase = "dice";
     m.dice = { A: null, B: null };
