@@ -21,8 +21,7 @@
   let userLink = null;
   let view = { name: "home", mode: "ranked", matchId: "" };
   let timer = null;
-  let inviteModal = null;
-  let inviteTimer = null;
+  let inviteTimers = {};
 
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
@@ -42,6 +41,13 @@
     setTimeout(function () { d.classList.remove("show"); setTimeout(function () { d.remove(); }, 250); }, 2200);
   }
   function getMatch(id) { return loadLobby().matches[id] || null; }
+  function takePendingMatch() {
+    try {
+      const raw = JSON.parse(localStorage.getItem("sdj_pvp_open_match_v1") || "null");
+      localStorage.removeItem("sdj_pvp_open_match_v1");
+      return raw && raw.id ? raw : null;
+    } catch (e) { return null; }
+  }
   function loadLobby() {
     try {
       const raw = JSON.parse(localStorage.getItem(LOBBY_KEY) || "{}");
@@ -98,8 +104,8 @@
     if (lobbyLink) { try { lobbyLink.close(); } catch (e) {} lobbyLink = null; }
     if (userLink) { try { userLink.close(); } catch (e) {} userLink = null; }
     if (timer) { clearInterval(timer); timer = null; }
-    if (inviteTimer) { clearInterval(inviteTimer); inviteTimer = null; }
-    if (inviteModal) { inviteModal.remove(); inviteModal = null; }
+    Object.keys(inviteTimers).forEach(function (k) { clearTimeout(inviteTimers[k]); });
+    inviteTimers = {};
     rootEl = null;
   }
 
@@ -130,8 +136,12 @@
 
   function onUserMessage(msg) {
     if (!msg || !msg.type) return;
-    if (msg.type === "invite") { showInviteModal(msg.invite); return; }
+    // 邀请弹窗统一由 pvp/ui/invite-bus.js 处理，这里只处理“我发出的邀请”的回执
     if (msg.type === "invite_response") {
+      if (msg.inviteId && inviteTimers[msg.inviteId]) {
+        clearTimeout(inviteTimers[msg.inviteId]);
+        delete inviteTimers[msg.inviteId];
+      }
       if (msg.accepted) {
         if (msg.match) mergeMatch(msg.match);
         toast("对方已接受邀请");
@@ -147,7 +157,12 @@
     rootEl = root;
     startLinks();
     if (!timer) timer = setInterval(tick, 1000);
-    renderHome();
+    const pending = takePendingMatch();
+    if (pending && openMatch(pending.id)) {
+      /* 从邀请弹窗跳转过来，直接进入对应对局 */
+    } else {
+      renderHome();
+    }
     global._cleanupTrainingPvp = destroy;
   }
 
@@ -236,12 +251,16 @@
       "</div>" +
       '<div class="tp-actions">' +
       (!m.referee && (m.creator.username === ctx.username || ctx.role === "admin") ? '<button class="tp-btn primary" data-act="invite" data-kind="referee">邀请裁判</button>' : "") +
-      (canInvite && !full ? '<button class="tp-btn" data-act="invite" data-kind="partner">邀请搭档</button>' : "") +
-      (canInvite && !full ? '<button class="tp-btn" data-act="invite" data-kind="opponent">邀请对手</button>' : "") +
-      (canInvite && !full ? '<button class="tp-btn ghost" data-act="invite" data-kind="ally">邀请队友</button>' : "") +
+      (m.referee && canInvite && !full ? '<button class="tp-btn" data-act="invite" data-kind="partner">邀请搭档</button>' : "") +
+      (m.referee && canInvite && !full ? '<button class="tp-btn" data-act="invite" data-kind="opponent">邀请对手</button>' : "") +
+      (m.referee && canInvite && !full ? '<button class="tp-btn ghost" data-act="invite" data-kind="ally">邀请队友</button>' : "") +
       '<button class="tp-btn primary" data-act="start" ' + (canStart(m) ? "" : "disabled") + '>开始</button>' +
       "</div>" +
-      '<div class="tp-note">' + (canStart(m) ? "裁判已确认、4 人满员，可以开始。" : "需要裁判 + 双方各 1 玩家 + 1 契约者后才能开始。") + "</div>" +
+      '<div class="tp-note">' + (canStart(m)
+        ? "裁判已确认、4 人满员，可以开始。"
+        : (m.referee
+          ? "需要双方各 1 玩家 + 1 契约者后才能开始。"
+          : "请先邀请裁判并等待同意，裁判确认后才能邀请搭档与对手。")) + "</div>" +
       "</div>");
   }
 
@@ -277,7 +296,9 @@
       body = '<div class="tp-card"><div class="tp-section-title">正式对局已开始</div>' +
         '<div class="tp-note">裁判控制台已接续本局。双方可通过队伍频道查看彼此选牌；裁判按先手→后手循环推进。</div>' +
         '<div class="tp-rooms">A 队频道：<code>' + esc(m.teamRooms.A) + '</code><br>B 队频道：<code>' + esc(m.teamRooms.B) + '</code></div>' +
-        '<div class="tp-actions">' + (ctx.role === "admin" ? '<button class="tp-btn primary" data-act="referee-console">进入裁判控制台</button>' : "") + "</div></div>";
+        '<div class="tp-actions">' +
+        (member.team ? '<button class="tp-btn primary" data-act="join-team" data-team="' + member.team + '" data-room="' + esc(m.teamRooms[member.team]) + '">进入本队频道</button>' : "") +
+        (ctx.role === "admin" ? '<button class="tp-btn primary" data-act="referee-console">进入裁判控制台</button>' : "") + "</div></div>";
     }
     page(head("对局进行 · " + m.name, PHASE_LABEL[phase] || phase, topInfoButtons()) +
       '<div class="tp-tabs"><span class="tp-badge">剩余 <b id="tpTimer">--:--</b></span><span class="tp-badge">' + MODE_LABEL[m.mode] + '</span></div>' +
@@ -346,6 +367,7 @@
   function openInvitePicker(kind) {
     const m = getMatch(view.matchId);
     if (!m) return;
+    if (kind !== "referee" && !m.referee) return toast("请先邀请裁判并等待确认");
     const me = memberOf(m, ctx.username);
     let team = "A", role = "";
     if (kind === "partner") {
@@ -381,6 +403,7 @@
     const m = getMatch(view.matchId);
     if (!m || !target) return;
     if (target === ctx.username) return toast("不能邀请自己");
+    if (kind !== "referee" && !m.referee) return toast("请先邀请裁判并等待确认");
     if (kind !== "referee" && totalMembers(m) >= 4) return toast("对局已满员");
     const invite = {
       id: uid("inv_"), from: ctx.username, fromName: ctx.displayName || ctx.username,
@@ -391,88 +414,26 @@
       const link = await TEAM.connect("user-" + target, function () {});
       link.send({ type: "invite", invite: invite });
       setTimeout(function () { try { link.close(); } catch (e) {} }, 800);
-      toast("邀请已发送，等待对方响应");
+      // 60 秒内没有回执就提示重新发起；收到 invite_response 时会取消
+      if (inviteTimers[invite.id]) clearTimeout(inviteTimers[invite.id]);
+      inviteTimers[invite.id] = setTimeout(function () {
+        delete inviteTimers[invite.id];
+        toast("邀请已超过 60 秒未响应，请重新发起");
+      }, 60000);
+      if (link.mode && link.mode !== "cloud") {
+        toast("邀请已通过本机通道发送（跨设备需双方在线云端）");
+      } else {
+        toast("邀请已发送，等待对方响应");
+      }
     } catch (e) { toast("邀请发送失败：" + (e.message || e)); }
   }
 
-  function showInviteModal(invite) {
-    if (!invite || invite.expiresAt < Date.now()) return;
-    if (inviteModal) inviteModal.remove();
-    const title = invite.kind === "referee"
-      ? invite.fromName + "邀请您担任 pvp" + MODE_LABEL[invite.mode] + "裁判"
-      : invite.kind === "opponent"
-        ? invite.fromName + "向你发起 pvp" + MODE_LABEL[invite.mode] + "决斗"
-        : invite.fromName + "邀请您成为队友进行 pvp" + MODE_LABEL[invite.mode];
-    const modal = document.createElement("div");
-    modal.className = "tp-invite";
-    modal.innerHTML = '<div class="tp-invite-box"><div class="tp-modal-title">' + esc(title) + '</div>' +
-      '<div class="tp-invite-time">剩余 <b id="tpInviteLeft">60</b> 秒</div>' +
-      '<div class="tp-modal-actions"><button class="tp-btn ghost" id="tpInviteNo">拒绝</button><button class="tp-btn primary" id="tpInviteYes">同意</button></div></div>';
-    document.body.appendChild(modal);
-    inviteModal = modal;
-    let left = 60;
-    inviteTimer = setInterval(function () {
-      left--;
-      const el = document.getElementById("tpInviteLeft");
-      if (el) el.textContent = String(Math.max(0, left));
-      if (left <= 0) {
-        clearInterval(inviteTimer);
-        modal.remove();
-        inviteModal = null;
-        toast("邀请已超时");
-      }
-    }, 1000);
-    const close = function () {
-      clearInterval(inviteTimer);
-      inviteTimer = null;
-      modal.remove();
-      inviteModal = null;
-    };
-    modal.querySelector("#tpInviteNo").onclick = function () {
-      respondInvite(invite, false);
-      close();
-    };
-    modal.querySelector("#tpInviteYes").onclick = function () {
-      acceptInvite(invite);
-      close();
-    };
-  }
-
-  function acceptInvite(invite) {
-    if (!invite || !invite.match) return;
-    if (invite.expiresAt < Date.now()) return toast("邀请已超时");
-    const m = clone(invite.match);
-    if (invite.kind === "referee") {
-      if (ctx.role !== "admin") return toast("只有管理者可以担任裁判");
-      m.referee = ctx.displayName || ctx.username;
-      m.phase = "partner";
-    } else {
-      if (totalMembers(m) >= 4) return toast("哎呀，来晚一步，对局已经满员啦");
-      if (invite.role && ctx.role !== "admin" && ctx.role !== invite.role) {
-        return toast("角色不匹配：该位置需要" + (invite.role === "player" ? "玩家" : "契约者"));
-      }
-      const team = m.teams[invite.team] || (m.teams[invite.team] = []);
-      const role = invite.role || ctx.role;
-      if (team.some(function (p) { return p.role === role; })) return toast("该位置已有同角色成员");
-      team.push({ username: ctx.username, name: ctx.displayName || ctx.username, role: role });
-      if (roleComplete(m.teams.A) && roleComplete(m.teams.B)) m.phase = "opponent";
-    }
-    mergeMatch(m);
-    publishMatch(m);
-    respondInvite(invite, true, m);
-    toast("已加入对局");
-    if (view.name === "lobby" || view.name === "waiting") {
-      view = { name: "waiting", mode: m.mode, matchId: m.id };
-      renderWaiting();
-    }
-  }
-
-  async function respondInvite(invite, accepted, match) {
-    try {
-      const link = await TEAM.connect("user-" + invite.from, function () {});
-      link.send({ type: "invite_response", accepted: !!accepted, match: match || invite.match, inviteId: invite.id });
-      setTimeout(function () { try { link.close(); } catch (e) {} }, 800);
-    } catch (e) { /* ignore */ }
+  function openMatch(id) {
+    const m = getMatch(id);
+    if (!m) return false;
+    view = { name: m.status === "playing" ? "pregame" : "waiting", mode: m.mode, matchId: m.id };
+    render();
+    return true;
   }
 
   /* ---------------- 前置阶段 ---------------- */
@@ -587,7 +548,17 @@
   function startBattle(m) {
     if (!E || !m.loadouts.A || !m.loadouts.B) return toast("双方编成尚未完成");
     try {
-      const em = E.createMatch({ teams: { A: { label: "A 队" }, B: { label: "B 队" } } });
+      const nameOf = function (side, role) {
+        const p = (m.teams[side] || []).find(function (x) { return x.role === role; });
+        return p ? (p.name || p.username) : (role === "player" ? "玩家" : "契约者");
+      };
+      const em = E.createMatch({
+        mode: m.mode,
+        teams: {
+          A: { label: "A 队", player: nameOf("A", "player"), contractor: nameOf("A", "contractor") },
+          B: { label: "B 队", player: nameOf("B", "player"), contractor: nameOf("B", "contractor") }
+        }
+      });
       em.phase = "ban";
       em.order.first = m.first || "A";
       em.order.second = em.order.first === "A" ? "B" : "A";
@@ -609,6 +580,7 @@
       localStorage.setItem("sdj_pvp_match_v1", JSON.stringify(em));
       m.phase = "battle";
       m.engineId = em.id;
+      m.engine = clone(em);
       m.deadline = null;
       publishMatch(m);
       renderPregame();
@@ -722,6 +694,10 @@
       if (act === "loadout") return openLoadout(btn.dataset.team);
       if (act === "ban") return openBan(btn.dataset.team);
       if (act === "referee-console") return openRefereeConsole();
+      if (act === "join-team") {
+        try { sessionStorage.setItem("sdj_pvp_team_room", btn.dataset.room || ""); } catch (err) { /* ignore */ }
+        return openRefereeConsole();
+      }
     });
   }
 
@@ -730,6 +706,7 @@
       init(root, options);
       bind();
     },
+    openMatch: openMatch,
     destroy: destroy
   };
 })(window);

@@ -50,6 +50,13 @@
       window._cleanupTrainingPvp();
       window._cleanupTrainingPvp = null;
     }
+    // 登录后常驻接收 PVP 邀请：无论当前在哪个页面都能弹出裁判/队友/对手邀请
+    const inviteSession = getSession();
+    if (inviteSession && inviteSession.username && window.SDJPvpInvites) {
+      window.SDJPvpInvites.start(inviteSession);
+    } else if (window.SDJPvpInvites) {
+      window.SDJPvpInvites.stop();
+    }
     const path = getPath();
     const postMatch = path.match(/^\/forum\/post\/([^/]+)$/);
     let fn;

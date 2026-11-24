@@ -21,6 +21,8 @@
   let teamMessages = [];
   let teamPartnerSelection = null;
   let teamSelection = { uid: "", abilityIds: [], hidden: false, confirmNarrative: false };
+  let lobbyLink = null;
+  const lobbyMatches = {};
 
   /* ---------------- DOM 工具 ---------------- */
   function h(tag, attrs) {
@@ -303,6 +305,7 @@
       renderPlayerNotice();
       return;
     }
+    connectLobby();
     match = loadMatch();
     if (!match) { renderSetup(); return; }
     if (match.phase === "roll") { renderSetup(); return; }
@@ -726,6 +729,68 @@
     );
   }
 
+  /* ---------------- 训练场对局接管 ---------------- */
+  function seedLobbyFromLocal() {
+    try {
+      const raw = JSON.parse(localStorage.getItem("sdj_pvp_lobby_v1") || "{}");
+      Object.keys(raw.matches || {}).forEach(function (id) {
+        const m = raw.matches[id];
+        if (m && m.status === "playing" && m.engine) lobbyMatches[id] = m;
+      });
+    } catch (e) { /* ignore */ }
+  }
+
+  async function connectLobby() {
+    if (!global.SDJPvpTeam || lobbyLink) return;
+    seedLobbyFromLocal();
+    try {
+      lobbyLink = await global.SDJPvpTeam.connect("lobby-main", function (msg) {
+        if (!msg || msg.type !== "match_update" || !msg.match) return;
+        if (msg.match.status !== "playing" || !msg.match.engine) return;
+        lobbyMatches[msg.match.id] = msg.match;
+        if (rootEl && rootEl.isConnected && !match) renderSetup();
+      });
+      lobbyLink.send({ type: "lobby_sync_request", at: Date.now() });
+    } catch (e) { /* ignore */ }
+  }
+
+  function requestLobbySync() {
+    if (!lobbyLink) { connectLobby(); return; }
+    try { lobbyLink.send({ type: "lobby_sync_request", at: Date.now() }); } catch (e) { /* ignore */ }
+  }
+
+  function takeoverMatch(matchData) {
+    if (!matchData || !matchData.engine) return flash("该对局没有可接管的引擎快照");
+    try {
+      match = E.deserialize(matchData.engine);
+      draft = emptyDraft();
+      saveDraft();
+      saveMatch();
+      ensureTeamRooms();
+      connectRefTeams();
+      flash("已接管训练场对局：" + (matchData.name || match.id), "info");
+      render(rootEl, ctx);
+    } catch (e) {
+      flash("接管失败：" + (e.message || e));
+    }
+  }
+
+  function renderLobbyTakeover() {
+    const list = Object.keys(lobbyMatches).map(function (id) { return lobbyMatches[id]; })
+      .filter(function (m) { return m && m.engine && m.status === "playing"; });
+    if (!list.length) return null;
+    return h("div", { class: "pvp-card" },
+      h("div", { class: "pvp-card-title" }, "训练场待接管对局"),
+      h("div", { class: "pvp-note" }, "训练场已完成投骰/编成/禁牌并开始的对局会出现在这里；点击接管后即可在本裁判台推进。"),
+      list.map(function (m) {
+        return h("div", { class: "pvp-inline", style: "justify-content:space-between;margin-top:8px" },
+          h("span", null, (m.name || m.id) + " · " + (m.mode === "casual" ? "娱乐赛" : "排位赛") + " · " + ((m.teams.A || []).length + (m.teams.B || []).length) + "/4"),
+          h("button", { class: "pvp-btn primary", onclick: function () { takeoverMatch(m); } }, "接管对局")
+        );
+      })
+    );
+  }
+
   /* ---------------- 创建对局 ---------------- */
   function field(label, id, value, placeholder) {
     return h("label", { class: "pvp-field" },
@@ -761,6 +826,8 @@
         )
       )
     );
+    const takeoverCard = renderLobbyTakeover();
+    if (takeoverCard) page.appendChild(takeoverCard);
     rootEl.appendChild(page);
   }
 
@@ -1804,6 +1871,10 @@
   }
 
   function destroy() {
+    if (lobbyLink) {
+      try { lobbyLink.close(); } catch (e) { /* ignore */ }
+      lobbyLink = null;
+    }
     ["A", "B"].forEach(function (side) {
       if (teamLinks[side]) {
         try { teamLinks[side].close(); } catch (e) { /* ignore */ }
