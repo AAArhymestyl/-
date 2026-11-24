@@ -116,6 +116,12 @@
     return { ok: true, data: r.data || clean(r) };
   }
 
+  async function finish(matchId, winner) {
+    const r = await C.rpc("pvp_match_finish", { p_match: matchId, p_winner: winner });
+    if (!r.ok) return r;
+    return { ok: true, match: r.match || clean(r) };
+  }
+
   async function snapshot(matchId) {
     const r = await C.rpc("pvp_spectator_snapshot", { p_match: matchId });
     if (!r.ok) return r;
@@ -203,6 +209,7 @@
     enginePut: enginePut,
     engineGet: engineGet,
     engineData: engineData,
+    finish: finish,
     snapshot: snapshot,
     pendingInvites: pendingInvites,
     watchLobby: watchLobby,

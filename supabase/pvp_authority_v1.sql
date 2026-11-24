@@ -611,6 +611,42 @@ begin
 end;
 $$;
 
+-- 裁判结束对局：写入最终胜者，观战页同步到「已结束」
+create or replace function public.pvp_match_finish(p_match text, p_winner text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_me text := public.sdj_pvp_username();
+  v_match public.pvp_matches%rowtype;
+begin
+  if p_winner not in ('A', 'B') then raise exception '胜者无效'; end if;
+  select * into v_match from public.pvp_matches where id = p_match for update;
+  if not found then raise exception '对局不存在'; end if;
+  if v_match.referee is distinct from v_me and not public.sdj_pvp_is_admin() then
+    raise exception '只有裁判可以结束对局';
+  end if;
+  if v_match.status <> 'playing' then raise exception '对局不在进行中'; end if;
+
+  update public.pvp_matches
+     set status = 'finished',
+         phase = 'done',
+         deadline = null,
+         public_state = coalesce(public_state, '{}'::jsonb) || jsonb_build_object(
+           'phase', 'done',
+           'winner', p_winner
+         ),
+         version = version + 1,
+         updated_at = now()
+   where id = p_match
+   returning * into v_match;
+
+  return to_jsonb(v_match);
+end;
+$$;
+
 create or replace function public.pvp_spectator_snapshot(p_match text)
 returns jsonb
 language sql
@@ -844,6 +880,7 @@ revoke all on function public.pvp_referee_publish(text, jsonb) from public;
 revoke all on function public.pvp_engine_publish(text, jsonb) from public;
 revoke all on function public.pvp_engine_get(text) from public;
 revoke all on function public.pvp_engine_data(text) from public;
+revoke all on function public.pvp_match_finish(text, text) from public;
 revoke all on function public.pvp_spectator_snapshot(text) from public;
 revoke all on function public.pvp_invite_create(text, text, text, text, text) from public;
 revoke all on function public.pvp_invite_respond(uuid, boolean) from public;
@@ -856,6 +893,7 @@ grant execute on function public.pvp_referee_publish(text, jsonb) to authenticat
 grant execute on function public.pvp_engine_publish(text, jsonb) to authenticated;
 grant execute on function public.pvp_engine_get(text) to authenticated;
 grant execute on function public.pvp_engine_data(text) to authenticated;
+grant execute on function public.pvp_match_finish(text, text) to authenticated;
 grant execute on function public.pvp_spectator_snapshot(text) to authenticated;
 grant execute on function public.pvp_invite_create(text, text, text, text, text) to authenticated;
 grant execute on function public.pvp_invite_respond(uuid, boolean) to authenticated;

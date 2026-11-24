@@ -26,6 +26,7 @@
   let cloudLobbyLink = null;
   let cloudRefreshTimer = null;
   let cloudPublishTimer = null;
+  let cloudFinished = false;
   const lobbyMatches = {};
 
   /* ---------------- DOM 工具 ---------------- */
@@ -189,11 +190,17 @@
   }
 
   function scheduleCloudPublish() {
-    if (!AUTH || !match || match.phase !== "battle" || match.authority !== "cloud") return;
+    if (!AUTH || !match || match.authority !== "cloud") return;
+    if (match.phase !== "battle" && !match.winner) return;
     if (cloudPublishTimer) clearTimeout(cloudPublishTimer);
     cloudPublishTimer = setTimeout(function () {
       cloudPublishTimer = null;
-      if (!match || match.phase !== "battle" || match.authority !== "cloud") return;
+      if (!match || match.authority !== "cloud") return;
+      if (match.winner && !cloudFinished) {
+        cloudFinished = true;
+        AUTH.finish(match.id, match.winner).catch(function () { cloudFinished = false; });
+      }
+      if (match.phase !== "battle") return;
       AUTH.publish(match.id, publicStateOf(match)).catch(function () { /* ignore */ });
     }, 400);
   }
@@ -886,6 +893,7 @@
       if (!engine) return flash("该对局没有可接管的引擎快照");
       match = E.deserialize(engine);
       match.authority = "cloud";
+      cloudFinished = false;
       if (matchData.name && !match.name) match.name = matchData.name;
       if (matchData.teamRooms && (!match.teamRooms || !match.teamRooms.A)) match.teamRooms = matchData.teamRooms;
       if (lobbyLink && match.teamRooms) {
