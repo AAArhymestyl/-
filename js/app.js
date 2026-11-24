@@ -27,7 +27,7 @@
   }
 
   // 全站缓存版本号：发布时同时改这里、map.js 的 ASSET_V、index.html 的 ?v=
-  const ASSET_V = "70";
+  const ASSET_V = "71";
   
   const routes = {
     "/login": renderLogin,
@@ -4575,9 +4575,15 @@
   window.SDJPvpState = {
     get: () => loadState(),
     save: () => saveState(),
+    saveNow: () => pushWorldNow(),
     reload: () => reloadState(),
     wallet: (username) => myWallet(username),
     accounts: () => getAccounts().map(a => ({ username: a.username, displayName: a.displayName || a.username, role: a.role || "player" })),
+    admins: () => socialDirectory().filter(u => u && u.role === "admin").map(u => ({
+      username: u.username,
+      displayName: u.name || u.username,
+      role: "admin"
+    })),
     friends: (username) => (typeof friendsOf === "function" ? friendsOf(username) : []),
     user: (username) => (typeof socialUser === "function" ? socialUser(username) : { username: username, name: username, role: "player" }),
     heldCards: (username) => {

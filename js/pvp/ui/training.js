@@ -354,10 +354,17 @@
       return global.SDJPvpState.user ? global.SDJPvpState.user(name) : { username: name, name: name, role: "player" };
     }).filter(function (u) { return u && u.username && u.username !== ctx.username; });
     if (kind === "referee") {
+      const seen = {};
+      const out = [];
+      const add = function (a) {
+        if (!a || !a.username || a.username === ctx.username || seen[a.username]) return;
+        seen[a.username] = true;
+        out.push({ username: a.username, name: a.displayName || a.username, role: "admin" });
+      };
+      if (global.SDJPvpState && global.SDJPvpState.admins) global.SDJPvpState.admins().forEach(add);
       const accounts = global.SDJPvpState && global.SDJPvpState.accounts ? global.SDJPvpState.accounts() : [];
-      return accounts.filter(function (a) { return a.role === "admin"; }).map(function (a) {
-        return { username: a.username, name: a.displayName || a.username, role: "admin" };
-      });
+      accounts.filter(function (a) { return a.role === "admin"; }).forEach(add);
+      return out;
     }
     const used = {};
     ["A", "B"].forEach(function (t) { (m.teams[t] || []).forEach(function (p) { used[p.username] = true; }); });
@@ -645,8 +652,15 @@
             rulesTable: modal.querySelector("#tpCfgRules").value,
             todayRules: modal.querySelector("#tpCfgToday").value
           });
-          toast("配置已保存");
           modal.remove();
+          // 配置直接影响全服玩家，必须立即写云端，不能等 800ms 防抖（刷新会丢）
+          if (global.SDJPvpState && global.SDJPvpState.saveNow) {
+            global.SDJPvpState.saveNow().then(function (ok) {
+              toast(ok === false ? "已保存到本机，云端同步失败，请重试" : "配置已保存并同步到云端");
+            }).catch(function () { toast("已保存到本机，云端同步失败，请重试"); });
+          } else {
+            toast("配置已保存");
+          }
         };
       });
   }
