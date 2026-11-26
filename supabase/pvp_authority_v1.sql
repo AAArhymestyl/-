@@ -363,6 +363,9 @@ begin
     if jsonb_array_length(coalesce(p_payload, '[]'::jsonb)) <> 2 then
       raise exception '每队必须提交 2 个 ban';
     end if;
+    if (select count(distinct value) from jsonb_array_elements_text(coalesce(p_payload, '[]'::jsonb))) <> 2 then
+      raise exception 'ban 不能重复';
+    end if;
   end if;
 
   insert into public.pvp_match_secrets (match_id, team, kind, payload, updated_at)

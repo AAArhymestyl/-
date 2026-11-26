@@ -53,7 +53,22 @@ js/pvp/
 
 - `tests/pvp/engine-regression.js`：引擎 P1–P51
 - `tests/pvp/rank-regression.js`：段位/经济 K1–K39
-- `tests/run.html`：完整回归 + PVP/TP 界面烟测（TP1–TP20：入口、权限、大厅、创建、裁判前置、配置云字段、邀请总线、裁判台接管、云端适配层、本地降级）
+- `tests/pvp/authority-unit.mjs`：云端适配层单元测试 10 项（缓存、RPC 参数、解包、toLocal、订阅过滤）
+- `tests/pvp/authority-integration.mjs`：真实 Supabase 集成测试 34 项（创建、邀请、越权、满员、阶段顺序、数量校验、RLS 暗牌隔离、引擎、观战、结束、超时）
+- `tests/run.html`：完整回归 303 项 + TP1–TP24 界面烟测（入口、权限、大厅、创建、裁判前置、配置云字段、邀请总线、裁判台接管、云端适配层、本地降级、观战页、邀请弹窗标题与超时）
+
+运行方式：
+
+```powershell
+# 单元测试（无需云端）
+node --test tests/pvp/authority-unit.mjs
+
+# 云端集成测试（会创建并清理测试账号）
+node --use-system-ca --dns-result-order=ipv4first tests/pvp/authority-integration.mjs
+
+# 浏览器全量回归
+# 启动本地静态服务器后打开 tests/run.html
+```
 
 ## 边界
 
